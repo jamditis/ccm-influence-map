@@ -57,7 +57,7 @@ class NetworkMapTests(unittest.TestCase):
         self.assertTrue(any(node["kind"] == "person" and node["crm"] == "Check CRM" for node in graph["nodes"]))
 
     def test_literals_in_html_and_csv(self):
-        name = '=2+2</script><script>alert("test")</script>'
+        name = '=2+2 </script><script>alert("test")</script>'
         graph = build_graph([{"id": "s1", "name": "Staff One"}], [
             Observation("s1", "Bluesky", name, "Example Media", "fake-ari", "person", "follow", ""),
         ], {"nodes": [{"id": "1", "type": "contact", "name": name, "organization": "Example Media"}],

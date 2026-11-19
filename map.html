@@ -215,7 +215,7 @@ const HTML = `
       <label class="field">Show<select id="f-type">
         <option value="">People and organizations</option><option value="person">People only</option><option value="organization">Organizations only</option></select></label>
       <label class="field">Include<select id="f-scope">
-        <option value="">Working relationships</option><option value="all">Also follow-only social ties</option></select></label>
+        <option value="">Working relationships</option><option value="all">Also one-way social ties</option></select></label>
       <button class="btn quiet" id="reset">Reset all</button>
     </div>
   </div>
@@ -320,13 +320,13 @@ function buildModel(G) {
   const staff = G.nodes.filter(n => n.kind === "staff").sort((a, b) => a.name.localeCompare(b.name));
   const staffIds = new Set(staff.map(s => s.id));
   const programs = G.nodes.filter(n => n.kind === "program");
-  const programOf = new Map(), orgsOf = new Map(), peopleOf = new Map(), social = new Map();
+  const programOf = new Map(), programEvidence = new Map(), orgsOf = new Map(), peopleOf = new Map(), social = new Map();
   const add = (map, k, v) => { if (!map.has(k)) map.set(k, new Set()); map.get(k).add(v); };
   for (const e of G.edges) {
     const s = byId.get(e.source), t = byId.get(e.target);
     if (!s || !t) continue;
-    if (t.kind === "program" && s.kind !== "program") add(programOf, s.id, t.id);
-    else if (s.kind === "program" && t.kind !== "program") add(programOf, t.id, s.id);
+    if (t.kind === "program" && s.kind !== "program") { add(programOf, s.id, t.id); programEvidence.set(s.id + "|" + t.name, e.relation); }
+    else if (s.kind === "program" && t.kind !== "program") { add(programOf, t.id, s.id); programEvidence.set(t.id + "|" + s.name, e.relation); }
     if (/affiliation/i.test(e.relation)) {
       const [p, o] = s.kind === "person" && t.kind === "organization" ? [s, t] : t.kind === "person" && s.kind === "organization" ? [t, s] : [];
       if (p) { add(orgsOf, p.id, o.id); add(peopleOf, o.id, p.id); }
@@ -339,22 +339,26 @@ function buildModel(G) {
       rec[e.relation] = (rec[e.relation] || 0) + e.count;
     }
   }
+  const affiliated = new Map();
+  for (const [sid, oid] of G.affiliations || []) if (staffIds.has(sid)) add(affiliated, oid, sid);
   let entities = [];
   for (const n of G.nodes) {
     if (n.kind !== "person" && n.kind !== "organization") continue;
     const soc = social.get(n.id) || new Map();
     const engaged = [...soc].filter(([, rel]) => Object.keys(rel).some(r => r !== "follow" && r !== "affiliation")).map(([id]) => id);
-    const holders = [...new Set([...(n.crmStaff || []), ...engaged])].filter(id => staffIds.has(id));
+    const holders = [...new Set([...(n.crmStaff || []), ...engaged, ...(affiliated.get(n.id) || [])])].filter(id => staffIds.has(id));
     const followers = [...soc.keys()].filter(id => !holders.includes(id));
     const progIds = [...(programOf.get(n.id) || [])];
     const programList = n.programNames && n.programNames.length ? n.programNames : progIds.map(id => byId.get(id).name);
     const raw = (n.crmWeight || 0) + 2 * (n.mutual || 0) + (n.weight || 0) + 0.5 * (n.projects || 0) + 2 * programList.length + 0.25 * (n.reach || 0);
-    const active = n.working || n.crmCount > 0 || n.mutual > 0 || n.weight > 0 || n.projects > 0;
+    // Wider than the builder's `working` flag on purpose: one two-way social tie counts in any sector (README, Matching and scores).
+    const active = n.working || n.crmCount > 0 || n.mutual > 0 || n.projects > 0;
     entities.push({
       id: n.id, node: n, kind: n.kind, name: n.name, companies: n.companies || [], sector: n.sector || "Other",
       group: groupOf(n.sector, media), holders, followers, programIds: progIds, programList, raw, active,
+      programEvidence: programList.map(p => programEvidence.get(n.id + "|" + p) || ""),
       last: n.lastContact || "", first: n.firstContact || "", months: monthsSince(n.lastContact, now),
-      unresolved: n.unresolved || "", crm: n.crm || "", crmRank: n.crm === "In CRM" ? 2 : n.crm === "Check CRM" ? 1 : 0,
+      unresolved: n.unresolved || "", crm: n.crm || "", crmRank: n.crm === "In CRM" ? 3 : n.crm === "Check CRM" ? 2 : n.crm === "CRM unavailable" ? 1 : 0,
       search: (n.name + " " + (n.companies || []).join(" ")).toLowerCase(),
     });
   }
@@ -395,6 +399,11 @@ function readHash() {
   S = { ...DEFAULTS };
   for (const k of Object.keys(DEFAULTS)) if (h.has("m." + k)) S[k] = h.get("m." + k);
   if (!["network", "list"].includes(S.v)) S.v = "network";
+  if (!SORTS[S.sort]) S.sort = DEFAULTS.sort;
+  if (!["asc", "desc"].includes(S.dir)) S.dir = DEFAULTS.dir;
+  if (!LENSES.some(l => l.id === S.lens)) S.lens = "";
+  if (!["", "all"].includes(S.scope)) S.scope = "";
+  if (!["", "person", "organization"].includes(S.type)) S.type = "";
 }
 function writeHash() {
   const h = new URLSearchParams();
@@ -416,7 +425,7 @@ function lensTest(id) {
     case "single": return e => e.holders.length === 1 && e.strength >= MEDIUM;
     case "reconnect": return e => e.months !== null && e.months >= 6;
     case "noowner": return e => e.holders.length === 0 && (e.node.crmCount || 0) > 0;
-    case "crm": return e => e.crm !== "In CRM" && e.active;
+    case "crm": return e => e.crm !== "In CRM" && e.crm !== "CRM unavailable" && e.active;
     default: return () => true;
   }
 }
@@ -483,6 +492,7 @@ const COLS = [
   { key: null, label: "Suggested next step", hideM: true },
 ];
 function crmTag(e) {
+  if (e.crm === "CRM unavailable") return `<span class="tag">CRM not checked</span>`;
   return e.crm === "In CRM" ? `<span class="tag ok">In CRM</span>` : e.crm === "Check CRM" ? `<span class="tag">Unconfirmed</span>` : `<span class="tag warn">Not in CRM</span>`;
 }
 function holderText(e, max = 3) {
@@ -502,7 +512,7 @@ function renderList(list) {
     <td class="hide-m">${e.programList.length ? esc(e.programList.slice(0, 2).join(", ")) + (e.programList.length > 2 ? ` +${e.programList.length - 2}` : "") : `<span class="note">None</span>`}</td>
     <td class="hide-m">${crmTag(e)}</td>
     <td class="hide-m">${e.next ? `<span class="tag warn">${esc(e.next.short)}</span>` : ""}</td></tr>`).join("");
-  view.innerHTML = `<table><caption class="sr">People and organizations, ${list.length} shown, sorted by ${S.sort}</caption><thead><tr>${COLS.map(c =>
+  view.innerHTML = `<table><caption class="sr">People and organizations, ${list.length} shown, sorted by ${esc(S.sort)}</caption><thead><tr>${COLS.map(c =>
     `<th${c.num ? ' class="num"' : ""}${c.hideM ? ' class="hide-m"' : ""}${c.key === S.sort ? ` aria-sort="${S.dir === "asc" ? "ascending" : "descending"}"` : ""}>${c.key ? `<button data-sort="${c.key}">${esc(c.label)}</button>` : `<span style="display:block;padding:10px">${esc(c.label)}</span>`}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
     ${list.length > listLimit ? `<button class="btn more" id="more">Show ${Math.min(100, list.length - listLimit)} more of ${(list.length - listLimit).toLocaleString()}</button>` : ""}`;
 }
@@ -521,7 +531,7 @@ function buildNetwork(list) {
   const limit = window.innerWidth < 760 ? 60 : net.w < 800 ? 100 : 140;
   const top = sorted(list.filter(e => e.strength > 0)).slice(0, limit);
   if (S.sort !== "strength" || S.dir !== "desc") top.sort((a, b) => b.strength - a.strength);
-  const pick = S.sel && M.ent.has(S.sel) && !top.some(e => e.id === S.sel) ? [M.ent.get(S.sel)] : [];
+  const pick = S.sel && !top.some(e => e.id === S.sel) ? list.filter(e => e.id === S.sel) : [];
   const shown = [...top, ...pick];
   const key = shown.map(e => e.id).join("|") + "/" + S.staff;
   if (key === net.key) return;
@@ -810,7 +820,8 @@ function entityPanel(e) {
   const why = [];
   if (n.crmCount) why.push(`${plural(n.crmCount, "CRM interaction")}${n.recent90 ? `, ${n.recent90} in the last 90 days` : ""}`);
   if (n.projects) why.push(`${plural(n.projects, "Board item")} linked`);
-  if (e.programList.length) why.push(`Part of ${plural(e.programList.length, "program")}`);
+  const inferred = e.programEvidence.filter(r => r.startsWith("Inferred")).length;
+  if (e.programList.length) why.push(`Linked to ${plural(e.programList.length, "program")}${inferred ? ` (${inferred} inferred, not recorded)` : ""}`);
   if (n.mutual) why.push(`${plural(n.mutual, "staffer")} follow${n.mutual === 1 ? "s" : ""} each other on social media`);
   const soc = {};
   for (const rel of (M.social.get(e.id) || new Map()).values()) for (const [r, c] of Object.entries(rel)) soc[r] = (soc[r] || 0) + c;
@@ -831,7 +842,7 @@ function entityPanel(e) {
       ${byType ? `<div class="bars" style="margin-top:10px">${byType.map(([t, c]) => `<div><span>${esc(typeLabel(t))}</span><i style="width:${Math.max(2, 100 * c / maxT)}%"></i><span>${c}</span></div>`).join("")}</div>` : ""}
       ${!M.hasDates ? `<p class="note" style="margin-top:8px">Dates and interaction types arrive with the next data build.</p>` : ""}</section>
     <section><h4>Why this ranks here</h4><ul class="why">${why.map(w => `<li>${esc(w)}</li>`).join("")}</ul></section>
-    ${e.programList.length ? `<section><h4>Programs</h4><ul>${e.programList.map(p => `<li>${esc(p)}</li>`).join("")}</ul></section>` : ""}
+    ${e.programList.length ? `<section><h4>Programs</h4><ul>${e.programList.map((p, i) => `<li class="row"><span>${esc(p)}</span>${e.programEvidence[i] ? `<small>${esc(e.programEvidence[i])}</small>` : ""}</li>`).join("")}</ul></section>` : ""}
     ${n.projectNames && n.projectNames.length ? `<section><h4>Board items${n.projects > n.projectNames.length ? ` (${n.projects}, recent shown)` : ""}</h4><ul>${n.projectNames.map(p => `<li>${esc(p)}</li>`).join("")}</ul></section>` : ""}
     ${relEnt.length ? `<section><h4>${e.kind === "organization" ? "People here" : "Organizations"}</h4><ul>${relEnt.slice(0, 10).map(itemRow).join("")}</ul></section>` : ""}`;
 }
@@ -842,6 +853,7 @@ function holdBasis(e, staffId) {
   const rel = (M.social.get(e.id) || new Map()).get(staffId) || {};
   const parts = Object.keys(rel).filter(r => REL_LABEL[r]).map(r => REL_LABEL[r]);
   if (parts.length) out.push(parts.join(", ") + " on social");
+  if (!out.length && e.kind === "organization") out.push("social tie to someone who works here");
   return out.join("; ");
 }
 function overviewPanel(list) {
@@ -891,7 +903,7 @@ function renderAbout() {
     <ul>
       <li><b>Strength</b> (0 to 100) adds up recent CRM interactions (newer counts more), Board items, programs and social ties, on a log scale. Strong is 55 and up; medium is 25 to 54.</li>
       <li><b>Held by</b> lists staff named in CRM notes about the person or who have a public social tie. The CRM has no owner field, so many ties show no staffer.</li>
-      <li><b>Working relationships</b> are people and organizations with CRM activity, a Board link or a two-way social tie. "Also follow-only social ties" adds accounts a staffer only follows.</li>
+      <li><b>Working relationships</b> are people and organizations with CRM activity, a Board link or a two-way social tie. "Also one-way social ties" adds accounts linked to staff only by a follow, a like, a repost or a reply.</li>
       <li><b>Not in CRM</b> means no exact CRM name match. <b>Unconfirmed</b> means a possible match that needs a check.</li>
       <li><b>Needs cleanup in CRM</b> lists agent or bot accounts, test records and CRM contacts with a first name only. They stay off the map and lists until someone fixes or removes the CRM record.</li>
     </ul>

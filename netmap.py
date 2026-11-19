@@ -15,6 +15,8 @@ import unicodedata
 from urllib.parse import unquote, urlsplit
 from zipfile import ZipFile, is_zipfile
 
+import unresolved
+
 
 TITLE = "CCM influence and interaction map"
 NETWORKS = ("LinkedIn", "Bluesky", "Threads", "X", "Instagram", "CRM")
@@ -462,6 +464,7 @@ def write_catalog(graph, output):
 
 def write_outputs(graph, output, data_only=False):
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
+    unresolved.mark(graph)
     if data_only:
         (output / f"{TITLE} graph.json").write_text(json.dumps(graph, ensure_ascii=False, separators=(",", ":")),
                                                      encoding="utf-8")
@@ -471,7 +474,8 @@ def write_outputs(graph, output, data_only=False):
         (output / f"{TITLE}.html").write_text(template.replace("/*__GRAPH__*/", payload), encoding="utf-8")
     write_catalog(graph, output)
     external = [node for node in graph["nodes"] if node["kind"] in ("person", "organization")]
-    working = [node for node in external if node["working"] and node["sector"] in MEDIA_SECTORS]
+    working = [node for node in external if node["working"] and node["sector"] in MEDIA_SECTORS
+               and not node.get("unresolved")]
     staff = {node["id"]: node["name"] for node in graph["nodes"] if node["kind"] == "staff"}
     with (output / f"{TITLE}.csv").open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle)

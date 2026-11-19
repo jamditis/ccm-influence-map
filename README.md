@@ -12,12 +12,14 @@ Open the HTML in `data/output/` in a browser. The viewer (`map.html`) has a netw
 To publish on a password-protected WordPress page, render a Custom HTML block and save it as the page content through the REST API:
 
 ```sh
-python3 wp_block.py "data/output/CCM influence and interaction map graph.json" <page-id> block.html
+python3 wp_block.py "data/output/CCM influence and interaction map graph.json" <page-id> data/output/block.html
 ```
 
 The block compresses the graph and encodes the app script so WordPress content filters cannot change them, and hides the theme title and content container on that page.
 
-Before packing, `unresolved.py` flags records that are not readable relationships: agent or bot accounts, test records, and CRM contacts with a first name only. The viewer keeps them off the map and lists and shows them under **Needs cleanup in CRM** so staff can fix or remove the CRM record. The next build picks up the fix.
+The block holds the full private graph, so keep it in `data/` or another private directory.
+
+Both `netmap.py` and `wp_block.py` run `unresolved.py`, which flags records that are not readable relationships: agent or bot accounts, test records, and CRM contacts with a first name only. Flagged records stay out of the CSV and summary rankings. The viewer keeps them off the map and lists and shows them under **Needs cleanup in CRM** so staff can fix or remove the CRM record. The next build picks up the fix.
 
 ### Scheduled refresh
 
@@ -54,6 +56,6 @@ Canonical program records can carry `catalog_kind`, `catalog_source`, `status`, 
 
 Stable account IDs unite repeated observations. A name and employer can unite compatible records when the evidence is unique. An exact normalized name and company indicates a high-confidence CRM person match. An exact unique organization name indicates a high-confidence organization match. Ambiguous records, unverified employers and absent organization names in partial snapshots go to **Check CRM**. A named person with a known employer and no exact CRM name is listed as **Not in CRM** based on the snapshot.
 
-The working network requires CRM activity, a Board link, or at least two mutual staff ties in a media sector. The CSV and top 25 use the default working-network and sector filters. The media lens covers local newsrooms, public media, journalism support, and media. Funder, university, civic, and other ties appear under All sectors. Sector labels use configured overrides and terms from the organization name or CRM role.
+The working network requires CRM activity, a Board link, or at least two mutual staff ties in a media sector. The CSV and top 25 use the default working-network and sector filters. The viewer's default list is wider: it also includes any record with a single two-way social tie, in any sector, so planners see light ties the CSV leaves out. Its About dialog states this rule. The media lens covers local newsrooms, public media, journalism support, and media. Funder, university, civic, and other ties appear under All sectors. Sector labels use configured overrides and terms from the organization name or CRM role.
 
 The rank gives priority to CRM interactions weighted by recency. Give an interaction four points on the day it occurs, halve the weight every 180 days, and use 0.25 points if the date is unavailable. Ties use interaction count, the number of distinct staff named in CRM, Board links, programs, and social observations. Use the presence of a staff name as evidence of a mention. Social interaction weights are 1 for a reaction, 2 for a repost and 3 for a reply. Degree centrality is the share of nodes linked to a record. Organization scores include its affiliated people. Scores use the complete edition and stay stable under filters.

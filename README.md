@@ -17,6 +17,20 @@ python3 wp_block.py "data/output/CCM influence and interaction map graph.json" <
 
 The block compresses the graph and encodes the app script so WordPress content filters cannot change them, and hides the theme title and content container on that page.
 
+Before packing, `unresolved.py` flags records that are not readable relationships: agent or bot accounts, test records, and CRM contacts with a first name only. The viewer keeps them off the map and lists and shows them under **Needs cleanup in CRM** so staff can fix or remove the CRM record. The next build picks up the fix.
+
+### Scheduled refresh
+
+The operator host runs one command that refreshes the private data, rebuilds the block, saves it to the page only when it changed, and checks the live page:
+
+1. Run the data refresh on the data host. It imports new LinkedIn exports and rebuilds the graph.
+2. Copy the graph JSON to the operator host's private run directory.
+3. Render the block with `wp_block.py` and print node, edge and cleanup counts.
+4. Compare the block with the stored page content through the WordPress REST API. Write only when it differs, keep the previous content in the run directory, and confirm the stored content equals the sent block.
+5. Load the page in headless system Chrome with the sandbox on and the page-password cookie, read the planning list counts by element role, and confirm flagged records stay out of the default list.
+
+The command, host names, page ID, credentials and run directories live on the operator host, never in this repository. Runs keep private data, so only the last five are kept.
+
 Use `--data-only` to write the graph JSON, ranked CSV, catalog and summary without rendering HTML. Edges carry counts, weights, and dates when the source records a date. CRM nodes expose first and last interaction dates, trailing 90-day counts, and counts by interaction type.
 
 ## Private inputs

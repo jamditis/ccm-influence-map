@@ -4,9 +4,12 @@ Build an offline HTML relationship map, ranked CSV, and plain-language summary f
 
 ```sh
 python3 netmap.py data
+python3 netmap.py --data-only data
 ```
 
 Open the HTML in `data/output/` in a browser. It defaults to working relationships in journalism, media and local news. Search or filter by sector, staff member, network, CRM status and program. The graph displays the first 16 filtered results. Select a result for its activity and links to people, organizations, projects and programs.
+
+Use `--data-only` to write the graph JSON, ranked CSV, catalog and summary without rendering HTML. Edges carry counts, weights, and dates when the source records a date. CRM nodes expose first and last interaction dates, trailing 90-day counts, and counts by interaction type.
 
 ## Private inputs
 

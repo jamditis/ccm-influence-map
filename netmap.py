@@ -22,6 +22,7 @@ WEIGHTS = {"reaction": 1, "repost": 2, "comment": 3}
 MUTUAL = {"connection", "mutual_follow"}
 SOCIAL_TIES = {"follow", *MUTUAL}
 RELATIONSHIPS = {*SOCIAL_TIES, *WEIGHTS}
+EMAIL_ADDRESS = re.compile(r"[\w.+-]+@[\w.-]+\.[a-z]{2,}", re.I)
 MEDIA_SECTORS = {"Local newsroom", "Public media", "Journalism support", "Media"}
 SECTOR_TERMS = {
     "Public media": ("public media", "public radio", "public television", "public broadcasting", "pbs", "npr"),
@@ -41,6 +42,11 @@ SECTOR_TERMS = {
 def normalize(value):
     value = unicodedata.normalize("NFKD", value.casefold())
     return " ".join(re.findall(r"[^\W_]+", "".join(c for c in value if not unicodedata.combining(c))))
+
+
+def remove_email(value):
+    clean = EMAIL_ADDRESS.sub("", value)
+    return clean.strip(" \t\r\n:–—-[]()<>") if clean != value else value
 
 
 def linkedin_id(url):
@@ -136,7 +142,9 @@ def crm_match(node, index, complete_orgs):
         return "Not in CRM", "No exact name in snapshot", None
     if node["kind"] == "organization" and len(names) == 1:
         return "In CRM", "High · exact organization name", names[0]
-    matches = [entry for entry in names if normalize(entry.get("organization") or "") in companies]
+    matches = [entry for entry in names if companies.intersection(
+        normalize(org) for org in entry.get("organizations", [entry.get("organization") or ""])
+    )]
     if len(matches) == 1:
         return "In CRM", "High · exact name and company", matches[0]
     if len(names) == 1 and (not companies or not normalize(names[0].get("organization") or "")):
@@ -192,24 +200,21 @@ def sector_for(name, companies, role, override):
 def attach_crm(crm, nodes, match_nodes, staff, internal_names, edge):
     if crm is None:
         return {}, {}
-    hub = key_for("internal", "crm")
-    nodes[hub] = {"id": hub, "name": "CCM CRM", "kind": "internal", "companies": []}
     known = {person["crm_id"]: person["id"] for person in staff if person.get("crm_id")}
     membership = defaultdict(set)
     crm_ids = {}
-    internal = set()
     for entry in crm["nodes"]:
         rid = entry["id"]
         kind = {"contact": "person", "organization": "organization", "project": "project", "program": "program"}[entry["type"]]
         matches = match_nodes[rid]
         node_id = known.get(rid) or (matches[0] if len(matches) == 1 else key_for("crm", rid))
         if kind == "organization" and normalize(entry["name"]) in internal_names:
-            node_id = hub
+            crm_ids[rid] = None
+            continue
         crm_ids[rid] = node_id
-        companies = [entry["organization"]] if entry.get("organization") else []
+        companies = entry.get("organizations", [entry["organization"]] if entry.get("organization") else [])
         node = nodes.setdefault(node_id, {"id": node_id, "name": entry["name"], "kind": kind, "companies": companies})
         if node["kind"] in ("staff", "internal"):
-            internal.add(node_id)
             continue
         node["companies"] = sorted(set(node["companies"] + companies), key=str.casefold)
         node["crm"] = "In CRM"
@@ -217,6 +222,8 @@ def attach_crm(crm, nodes, match_nodes, staff, internal_names, edge):
         node["sector_hint"] = entry.get("role") or entry.get("org_type") or ""
         if kind == "organization":
             node["hasContact"] = entry.get("has_contact")
+        if kind == "project":
+            node["projectDate"] = entry.get("updated", "")
         if kind == "program" and entry.get("catalog_source"):
             node["catalog"] = {"kind": entry["catalog_kind"], "source": entry["catalog_source"],
                                "status": entry["status"], "owners": entry["owners"], "funders": entry["funders"],
@@ -227,6 +234,8 @@ def attach_crm(crm, nodes, match_nodes, staff, internal_names, edge):
     for link in crm["links"]:
         source = crm_ids.get(link["source"], link["source"])
         target = crm_ids[link["target"]]
+        if source is None or target is None:
+            continue
         if source not in nodes:
             raise ValueError("CRM relationship refers to an unknown source ID")
         relation = link.get("relation", "CRM relationship")
@@ -239,27 +248,37 @@ def attach_crm(crm, nodes, match_nodes, staff, internal_names, edge):
             program_links[source].add(target)
 
     touch = defaultdict(set)
-    crm_metrics = defaultdict(Counter)
+    crm_metrics = defaultdict(lambda: {"count": 0, "weight": 0.0, "by_type": Counter(),
+                                      "first_contact": "", "last_contact": "", "recent90": 0})
     for rid, metrics in crm.get("interactions", {}).items():
         person = crm_ids[rid]
-        if person in internal:
-            continue
-        edge(hub, person, "CRM", "CRM interactions", metrics["count"])
         for staff_id, count in metrics["staff"].items():
             if staff_id not in nodes or nodes[staff_id]["kind"] != "staff":
                 raise ValueError("CRM interaction refers to an unknown staff ID")
-            edge(staff_id, person, "CRM", "Staff named in CRM interactions", count)
-        for node_id in {person, *membership[person]} - internal:
-            crm_metrics[node_id].update(count=metrics["count"], weight=metrics["weight"])
+            edge(staff_id, person, "CRM", "Staff named in CRM interactions", count,
+                 metrics.get("staff_last", {}).get(staff_id, ""), metrics.get("staff_weight", {}).get(staff_id))
+        for node_id in {person, *membership[person]}:
+            record = crm_metrics[node_id]
+            record["count"] += metrics["count"]
+            record["weight"] += metrics["weight"]
+            record["recent90"] += metrics.get("recent90", 0)
+            record["by_type"].update(metrics.get("by_type", {}))
+            first = metrics.get("first_contact", "")
+            if first:
+                record["first_contact"] = min(record["first_contact"] or first, first)
+            record["last_contact"] = max(record["last_contact"], metrics.get("last_contact", ""))
             touch[node_id].update(metrics["staff"])
     for contact, organizations in membership.items():
-        for org in organizations - internal:
+        for org in organizations:
             program_links[org].update(program_links[contact])
             project_links[org].update(project_links[contact])
     for node_id, node in nodes.items():
-        node["projectNames"] = sorted({nodes[item]["name"] for item in project_links[node_id]}, key=str.casefold)[:2]
+        ordered_projects = sorted(project_links[node_id], key=lambda item: (nodes[item].get("projectDate", ""), item),
+                                  reverse=True)
+        node["projectNames"] = list(dict.fromkeys(nodes[item]["name"] for item in ordered_projects))[:8]
         node["projects"] = len(project_links[node_id])
         node["programs"] = len(program_links[node_id])
+        node["programNames"] = sorted({nodes[item]["name"] for item in program_links[node_id]}, key=str.casefold)
     return crm_metrics, touch
 
 
@@ -277,27 +296,38 @@ def build_graph(staff, rows, crm, coverage, config=None):
     staff_links = defaultdict(set)
     activity = Counter()
     edges = Counter()
+    edge_weights = Counter()
+    edge_dates = {}
     seen = set()
     nodes = {}
     affiliation_evidence = set()
     match_nodes = defaultdict(list)
     staff_by_account = {}
+    staff_by_name = {}
     staff_ids = set()
     for person in staff:
         node_id = person["id"]
         if node_id in staff_ids:
             raise ValueError("Duplicate staff ID")
         staff_ids.add(node_id)
-        nodes[node_id] = {"id": node_id, "kind": "staff", "name": person["name"],
+        nodes[node_id] = {"id": node_id, "kind": "staff", "name": person["name"], "role": person.get("role", ""),
                           "companies": [], "crm": "", "confidence": ""}
+        for label in [person["name"], *person.get("alternate_names", [])]:
+            name = normalize(label)
+            if name in staff_by_name and staff_by_name[name] != node_id:
+                raise ValueError("Duplicate staff name or alias")
+            staff_by_name[name] = node_id
         for account in person.get("accounts", []):
             if account in staff_by_account:
                 raise ValueError("Duplicate staff account")
             staff_by_account[account] = node_id
 
-    def edge(source, target, network, relation, count=1):
+    def edge(source, target, network, relation, count=1, last="", weight=None):
         if source != target:
-            edges[source, target, network, relation] += count
+            key = source, target, network, relation
+            edges[key] += count
+            edge_weights[key] += weight if weight is not None else count * WEIGHTS.get(relation, 1)
+            edge_dates[key] = max(edge_dates.get(key, ""), last)
             central[source].add(target)
             central[target].add(source)
 
@@ -316,6 +346,10 @@ def build_graph(staff, rows, crm, coverage, config=None):
         if row.relation in WEIGHTS and not row.event:
             raise ValueError("Interactions require a stable event ID")
         target = staff_by_account.get(row.account, node_id)
+        if row.kind == "person" and not row.company:
+            target = staff_by_name.get(normalize(row.name), target)
+        elif row.kind == "person" and normalize(row.company) in internal_names:
+            target = staff_by_name.get(normalize(row.name), target)
         if row.kind == "organization":
             target = organization(row.name)
         if target == row.staff:
@@ -370,7 +404,9 @@ def build_graph(staff, rows, crm, coverage, config=None):
         node.update(reach=len(reach[node_id]), weight=activity[node_id],
                     mutual=len(mutual[node_id]), crmCount=count, crmWeight=round(weight, 3), sector=sector,
                     crmStaff=sorted(touched), projects=projects, programs=node.get("programs", 0),
-                    projectNames=node.get("projectNames", []),
+                    projectNames=node.get("projectNames", []), programNames=node.get("programNames", []),
+                    lastContact=metrics.get("last_contact", ""), firstContact=metrics.get("first_contact", ""),
+                    recent90=metrics.get("recent90", 0), byType=dict(metrics.get("by_type", {})),
                     centrality=round(len(central[node_id]) / denominator, 8),
                     staff=sorted(staff_links[node_id] | touched),
                     working=bool(count or projects or len(mutual[node_id]) >= 2 and sector in MEDIA_SECTORS))
@@ -378,7 +414,9 @@ def build_graph(staff, rows, crm, coverage, config=None):
             affiliation_evidence.update((staff_id, node_id, "CRM") for staff_id in touched)
     ordered = sorted(nodes.values(), key=rank_key)
     return {"nodes": ordered, "edges": [
-        {"source": source, "target": target, "network": network, "relation": relation, "count": count}
+        {"source": source, "target": target, "network": network, "relation": relation, "count": count,
+         "weight": round(edge_weights[source, target, network, relation], 4),
+         "lastDate": edge_dates[source, target, network, relation]}
         for (source, target, network, relation), count in sorted(edges.items())
     ], "coverage": coverage, "mediaSectors": sorted(MEDIA_SECTORS),
         "affiliations": [list(tie) for tie in sorted(affiliation_evidence)]}
@@ -421,11 +459,15 @@ def write_catalog(graph, output):
                               ", ".join(meta["fundingSources"]))] + counts)
 
 
-def write_outputs(graph, output):
+def write_outputs(graph, output, data_only=False):
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
-    template = Path(__file__).with_name("map.html").read_text()
-    payload = json.dumps(graph, ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c")
-    (output / f"{TITLE}.html").write_text(template.replace("/*__GRAPH__*/", payload), encoding="utf-8")
+    if data_only:
+        (output / f"{TITLE} graph.json").write_text(json.dumps(graph, ensure_ascii=False, separators=(",", ":")),
+                                                     encoding="utf-8")
+    else:
+        template = Path(__file__).with_name("map.html").read_text()
+        payload = json.dumps(graph, ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c")
+        (output / f"{TITLE}.html").write_text(template.replace("/*__GRAPH__*/", payload), encoding="utf-8")
     write_catalog(graph, output)
     external = [node for node in graph["nodes"] if node["kind"] in ("person", "organization")]
     working = [node for node in external if node["working"] and node["sector"] in MEDIA_SECTORS]
@@ -479,6 +521,7 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("data", type=Path)
+    parser.add_argument("--data-only", action="store_true", help="Write graph JSON, rankings, catalog and summary")
     options = parser.parse_args()
     data = options.data
     staff = json.loads((data / "staff.json").read_text())
@@ -516,7 +559,21 @@ def main():
     config_path = data / "config.json"
     config = json.loads(config_path.read_text()) if config_path.is_file() else {}
     exclude = set(config.get("exclude_accounts", []))
-    rows = [row for row in rows if row.account not in exclude]
+    excluded_names = {normalize(name) for name in config.get("excluded_entities", [])}
+    internal_names = {normalize(name) for name in config.get("internal_organizations", [])}
+    aliases = {normalize(key): value for key, value in config.get("organization_aliases", {}).items()}
+    cleaned = []
+    for row in rows:
+        name = remove_email(row.name)
+        if not name or normalize(name) in excluded_names or row.account in exclude:
+            continue
+        if row.kind == "organization":
+            if normalize(name) in internal_names:
+                continue
+            name = aliases.get(normalize(name), name)
+        company = remove_email(row.company)
+        cleaned.append(Observation(**(vars(row) | {"name": name, "company": aliases.get(normalize(company), company)})))
+    rows = cleaned
     for person in staff:
         person["crm_id"] = config.get("staff_crm_ids", {}).get(person["id"])
     crm_path = data / "crm.json"
@@ -540,14 +597,17 @@ def main():
             if totals.get("unresolved_board_items"):
                 coverage.append(f"{totals['unresolved_board_items']} linked Board IDs have no available item title.")
         if crm.get("catalog_counts"):
-            counts = crm["catalog_counts"]
-            coverage.append(f"CCM wiki catalog: {counts.get('Program', 0)} program concepts and "
-                            f"{counts.get('Event', 0)} related event concepts.")
+            catalog_counts = crm["catalog_counts"]
+            coverage.append(f"CCM wiki catalog: {catalog_counts.get('Program', 0)} program concepts and "
+                            f"{catalog_counts.get('Event', 0)} related event concepts.")
             coverage.append("Program links are marked Recorded or Inferred and identify their source.")
+        if crm.get("cleaning"):
+            coverage.append("Test records and internal entities were removed. Verified duplicate records were combined.")
+            coverage.append("CRM staff ties show explicit staff names mentioned in the source. There is no owner field.")
         if counts["organization"] < crm["organization_total"]:
             coverage.append("The dashboard API identifies organizations with linked contacts.")
     graph = build_graph(staff, rows, crm, coverage, config)
-    write_outputs(graph, data / "output")
+    write_outputs(graph, data / "output", options.data_only)
     print(f"Built {len(graph['nodes'])} nodes and {len(graph['edges'])} edges.")
 
 

@@ -7,7 +7,15 @@ python3 netmap.py data
 python3 netmap.py --data-only data
 ```
 
-Open the HTML in `data/output/` in a browser. It defaults to working relationships in journalism, media and local news. Search or filter by sector, staff member, network, CRM status and program. The graph displays the first 16 filtered results. Select a result for its activity and links to people, organizations, projects and programs.
+Open the HTML in `data/output/` in a browser. The viewer (`map.html`) has a network view and a sortable list of working relationships. Planning lists show the strongest ties, ties held by one staffer, ties with no contact in six months, ties with no staff owner and ties missing from the CRM. Filter by staff member, program, sector and type. Select a person, organization or staffer for contact history, the staff who hold the tie and a suggested next step. Copy link saves the current view in the URL; CSV downloads the current list.
+
+To publish on a password-protected WordPress page, render a Custom HTML block and save it as the page content through the REST API:
+
+```sh
+python3 wp_block.py "data/output/CCM influence and interaction map graph.json" <page-id> block.html
+```
+
+The block compresses the graph and encodes the app script so WordPress content filters cannot change them, and hides the theme title and content container on that page.
 
 Use `--data-only` to write the graph JSON, ranked CSV, catalog and summary without rendering HTML. Edges carry counts, weights, and dates when the source records a date. CRM nodes expose first and last interaction dates, trailing 90-day counts, and counts by interaction type.
 

@@ -67,7 +67,7 @@ class NetworkMapTests(unittest.TestCase):
             write_outputs(graph, output)
             page = (output / f"{TITLE}.html").read_text()
             self.assertNotIn(name, page)
-            payload = page.split('<script id="graph" type="application/json">', 1)[1].split("</script>", 1)[0]
+            payload = page.split('<script id="ccmnet-graph" type="application/json">', 1)[1].split("</script>", 1)[0]
             self.assertEqual(json.loads(payload), graph)
             self.assertIn("'=2+2", (output / f"{TITLE}.csv").read_text(encoding="utf-8-sig"))
 

@@ -373,7 +373,6 @@ function buildModel(G) {
   for (const e of entities) {
     e.strength = Math.max(e.raw > 0 ? 1 : 0, Math.min(100, Math.round(100 * Math.log1p(e.raw) / cap)));
     e.tier = e.strength >= STRONG ? "Strong" : e.strength >= MEDIUM ? "Medium" : "Light";
-    e.next = nextStep(e);
   }
   const ent = new Map(entities.map(e => [e.id, e]));
   // An organization also holds the ties its people hold (CRM notes or two-way social activity, never a follow).
@@ -383,6 +382,7 @@ function buildModel(G) {
     e.viaPeople = [...own].filter(h => !e.holders.includes(h));
     e.holders = [...own];
   }
+  for (const e of entities) e.next = nextStep(e);
   const cleanup = entities.filter(e => e.unresolved);
   entities = entities.filter(e => !e.unresolved);
   const programMembers = new Map();
@@ -412,7 +412,7 @@ function readHash() {
   S = { ...DEFAULTS };
   for (const k of Object.keys(DEFAULTS)) if (h.has("m." + k)) S[k] = h.get("m." + k);
   if (!["network", "list"].includes(S.v)) S.v = "network";
-  if (!SORTS[S.sort]) S.sort = DEFAULTS.sort;
+  if (!Object.hasOwn(SORTS, S.sort)) S.sort = DEFAULTS.sort;
   if (!["asc", "desc"].includes(S.dir)) S.dir = DEFAULTS.dir;
   if (!LENSES.some(l => l.id === S.lens)) S.lens = "";
   if (!["", "all"].includes(S.scope)) S.scope = "";
@@ -845,7 +845,7 @@ function entityPanel(e) {
   const byType = n.byType && Object.keys(n.byType).length ? Object.entries(n.byType).sort((a, b) => b[1] - a[1]) : null;
   const maxT = byType ? byType[0][1] : 1;
   const related = e.kind === "organization" ? [...(M.peopleOf.get(e.id) || [])] : [...(M.orgsOf.get(e.id) || [])];
-  const relEnt = related.map(id => M.ent.get(id)).filter(Boolean).sort((a, b) => b.strength - a.strength);
+  const relEnt = related.map(id => M.ent.get(id)).filter(r => r && !r.unresolved).sort((a, b) => b.strength - a.strength);
   return `<div class="kicker"><span class="dot" style="background:${GROUP[e.group].color}"></span>${e.kind === "organization" ? "Organization" : "Person"} · ${esc(e.sector)}</div>
     <h3>${esc(e.name)}</h3>${e.companies.length ? `<div class="org">${esc(e.companies.join("; "))}</div>` : ""}
     <div>${crmTag(e)}<span class="tag">${esc(e.tier)} tie · ${e.strength}/100</span></div>

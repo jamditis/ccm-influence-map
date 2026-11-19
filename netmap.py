@@ -142,12 +142,13 @@ def crm_match(node, index, complete_orgs):
         return "Not in CRM", "No exact name in snapshot", None
     if node["kind"] == "organization" and len(names) == 1:
         return "In CRM", "High · exact organization name", names[0]
-    matches = [entry for entry in names if companies.intersection(
-        normalize(org) for org in entry.get("organizations", [entry.get("organization") or ""])
-    )]
+    def record_companies(entry):
+        return {normalize(org) for org in (entry.get("organizations") or [entry.get("organization") or ""])} - {""}
+
+    matches = [entry for entry in names if companies.intersection(record_companies(entry))]
     if len(matches) == 1:
         return "In CRM", "High · exact name and company", matches[0]
-    if len(names) == 1 and (not companies or not normalize(names[0].get("organization") or "")):
+    if len(names) == 1 and (not companies or not record_companies(names[0])):
         return "Check CRM", "Low · name only", None
     return "Check CRM", "Ambiguous · duplicate name or company mismatch", None
 
@@ -252,6 +253,8 @@ def attach_crm(crm, nodes, match_nodes, staff, internal_names, edge):
                                       "first_contact": "", "last_contact": "", "recent90": 0})
     for rid, metrics in crm.get("interactions", {}).items():
         person = crm_ids[rid]
+        if person is None or nodes[person]["kind"] == "staff":
+            continue
         for staff_id, count in metrics["staff"].items():
             if staff_id not in nodes or nodes[staff_id]["kind"] != "staff":
                 raise ValueError("CRM interaction refers to an unknown staff ID")
@@ -346,9 +349,7 @@ def build_graph(staff, rows, crm, coverage, config=None):
         if row.relation in WEIGHTS and not row.event:
             raise ValueError("Interactions require a stable event ID")
         target = staff_by_account.get(row.account, node_id)
-        if row.kind == "person" and not row.company:
-            target = staff_by_name.get(normalize(row.name), target)
-        elif row.kind == "person" and normalize(row.company) in internal_names:
+        if row.kind == "person" and not row.account and normalize(row.company) in internal_names:
             target = staff_by_name.get(normalize(row.name), target)
         if row.kind == "organization":
             target = organization(row.name)

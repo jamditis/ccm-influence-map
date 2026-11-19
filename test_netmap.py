@@ -118,6 +118,33 @@ class NetworkMapTests(unittest.TestCase):
                 self.assertEqual(row[column], "1")
             self.assertEqual(row["Inferred people"], "0")
 
+    def test_internal_metrics_and_verified_staff_identity(self):
+        staff = [
+            {"id": "s1", "name": "Staff One", "crm_id": "own", "accounts": ["verified-staff"]},
+            {"id": "s2", "name": "Staff Two"},
+        ]
+        crm = {"nodes": [
+            {"id": "own", "type": "contact", "name": "Staff One", "organization": "Example Media"},
+            {"id": "external", "type": "organization", "name": "Example Media"},
+            {"id": "internal", "type": "organization", "name": "Example Home"},
+        ], "links": [{"source": "own", "target": "external", "relation": "CRM affiliation"}],
+            "interactions": {
+                "own": {"count": 4, "weight": 9, "staff": {"s2": 4}},
+                "internal": {"count": 7, "weight": 11, "staff": {"s2": 7}},
+            },
+        }
+        rows = [
+            Observation("s2", "Bluesky", "Staff One", "", "unknown-account", "person", "follow", ""),
+            Observation("s2", "Bluesky", "Staff One", "", "verified-staff", "person", "follow", ""),
+        ]
+        graph = build_graph(staff, rows, crm, [], {"internal_organizations": ["Example Home"]})
+        nodes = graph["nodes"]
+        external = next(node for node in nodes if node["kind"] == "organization")
+        self.assertEqual(external["crmCount"], 0)
+        self.assertEqual(sum(node["kind"] == "person" for node in nodes), 1)
+        self.assertTrue(any(edge["target"] == "s1" for edge in graph["edges"]))
+        self.assertFalse(any(edge["target"] is None for edge in graph["edges"]))
+
 
 if __name__ == "__main__":
     unittest.main()

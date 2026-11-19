@@ -64,6 +64,7 @@ button { cursor: pointer; }
 /* network */
 .net { overflow: hidden; background: #fbfbfa; }
 canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas[hidden] { display: none; }
 canvas.dragging { cursor: grabbing; }
 .legend { position: absolute; left: 14px; bottom: 14px; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; max-width: 260px; }
 .legend div { display: flex; align-items: center; gap: 8px; }
@@ -339,14 +340,19 @@ function buildModel(G) {
       rec[e.relation] = (rec[e.relation] || 0) + e.count;
     }
   }
-  const affiliated = new Map();
-  for (const [sid, oid] of G.affiliations || []) if (staffIds.has(sid)) add(affiliated, oid, sid);
+  const inherited = (orgId, program) => {
+    for (const pid of peopleOf.get(orgId) || []) {
+      const r = programEvidence.get(pid + "|" + program);
+      if (r) return "Inferred · through a linked contact (" + r + ")";
+    }
+    return "";
+  };
   let entities = [];
   for (const n of G.nodes) {
     if (n.kind !== "person" && n.kind !== "organization") continue;
     const soc = social.get(n.id) || new Map();
     const engaged = [...soc].filter(([, rel]) => Object.keys(rel).some(r => r !== "follow" && r !== "affiliation")).map(([id]) => id);
-    const holders = [...new Set([...(n.crmStaff || []), ...engaged, ...(affiliated.get(n.id) || [])])].filter(id => staffIds.has(id));
+    const holders = [...new Set([...(n.crmStaff || []), ...engaged])].filter(id => staffIds.has(id));
     const followers = [...soc.keys()].filter(id => !holders.includes(id));
     const progIds = [...(programOf.get(n.id) || [])];
     const programList = n.programNames && n.programNames.length ? n.programNames : progIds.map(id => byId.get(id).name);
@@ -356,7 +362,7 @@ function buildModel(G) {
     entities.push({
       id: n.id, node: n, kind: n.kind, name: n.name, companies: n.companies || [], sector: n.sector || "Other",
       group: groupOf(n.sector, media), holders, followers, programIds: progIds, programList, raw, active,
-      programEvidence: programList.map(p => programEvidence.get(n.id + "|" + p) || ""),
+      programEvidence: programList.map(p => programEvidence.get(n.id + "|" + p) || inherited(n.id, p)),
       last: n.lastContact || "", first: n.firstContact || "", months: monthsSince(n.lastContact, now),
       unresolved: n.unresolved || "", crm: n.crm || "", crmRank: n.crm === "In CRM" ? 3 : n.crm === "Check CRM" ? 2 : n.crm === "CRM unavailable" ? 1 : 0,
       search: (n.name + " " + (n.companies || []).join(" ")).toLowerCase(),
@@ -370,10 +376,17 @@ function buildModel(G) {
     e.next = nextStep(e);
   }
   const ent = new Map(entities.map(e => [e.id, e]));
+  // An organization also holds the ties its people hold (CRM notes or two-way social activity, never a follow).
+  for (const e of entities) if (e.kind === "organization") {
+    const own = new Set(e.holders);
+    for (const pid of peopleOf.get(e.id) || []) { const pe = ent.get(pid); if (pe && !pe.unresolved) for (const h of pe.holders) own.add(h); }
+    e.viaPeople = [...own].filter(h => !e.holders.includes(h));
+    e.holders = [...own];
+  }
   const cleanup = entities.filter(e => e.unresolved);
   entities = entities.filter(e => !e.unresolved);
   const programMembers = new Map();
-  for (const e of entities) for (const p of e.programList) add(programMembers, p, e.id);
+  for (const e of [...entities, ...cleanup]) for (const p of e.programList) add(programMembers, p, e.id);
   const hasDates = entities.some(e => e.last);
   const collected = (G.coverage || []).map(c => /read (\d{4}-\d{2}-\d{2})/.exec(c)).find(Boolean);
   return { G, byId, ent, entities, cleanup, staff, staffIds, programs, programMembers, orgsOf, peopleOf, social, hasDates,
@@ -725,6 +738,7 @@ function nodeAt(px, py) {
 }
 function renderNetwork(list) {
   const empty = $("net-empty");
+  canvas.hidden = !list.length;
   if (!list.length) { empty.hidden = false; empty.innerHTML = emptyState(); net.nodes = []; net.key = ""; draw(); $("net-note").textContent = ""; return; }
   empty.hidden = true;
   buildNetwork(list);
@@ -853,7 +867,7 @@ function holdBasis(e, staffId) {
   const rel = (M.social.get(e.id) || new Map()).get(staffId) || {};
   const parts = Object.keys(rel).filter(r => REL_LABEL[r]).map(r => REL_LABEL[r]);
   if (parts.length) out.push(parts.join(", ") + " on social");
-  if (!out.length && e.kind === "organization") out.push("social tie to someone who works here");
+  if ((e.viaPeople || []).includes(staffId)) out.push("holds a tie with someone who works here");
   return out.join("; ");
 }
 function overviewPanel(list) {
@@ -951,7 +965,7 @@ $("copy").onclick = async () => {
   catch { window.prompt("Copy this link", location.href); }
 };
 $("csv").onclick = () => {
-  const cell = v => { let s = String(v ?? ""); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const cell = v => { let s = String(v ?? ""); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const head = ["Name", "Type", "Organization", "Sector", "Strength", "Tier", "Last contact", "CRM interactions", "Last 90 days", "Held by", "Programs", "Board items", "CRM status", "Suggested next step"];
   const rows = M.current.map(e => [e.name, e.kind, e.companies.join("; "), e.sector, e.strength, e.tier, e.last, e.node.crmCount || 0, e.node.recent90 ?? "",
     e.holders.map(id => M.byId.get(id).name).join("; "), e.programList.join("; "), e.node.projects || 0, e.crm || "Not in CRM", e.next ? e.next.short : ""]);

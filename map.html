@@ -250,6 +250,7 @@ const LENSES = [
   { id: "reconnect", label: "No contact in 6+ months" },
   { id: "noowner", label: "No staff owner" },
   { id: "crm", label: "Not in CRM" },
+  { id: "cleanup", label: "Needs cleanup in CRM" },
 ];
 const SORTS = {
   name: (a, b) => a.name.localeCompare(b.name),
@@ -338,7 +339,7 @@ function buildModel(G) {
       rec[e.relation] = (rec[e.relation] || 0) + e.count;
     }
   }
-  const entities = [];
+  let entities = [];
   for (const n of G.nodes) {
     if (n.kind !== "person" && n.kind !== "organization") continue;
     const soc = social.get(n.id) || new Map();
@@ -353,11 +354,11 @@ function buildModel(G) {
       id: n.id, node: n, kind: n.kind, name: n.name, companies: n.companies || [], sector: n.sector || "Other",
       group: groupOf(n.sector, media), holders, followers, programIds: progIds, programList, raw, active,
       last: n.lastContact || "", first: n.firstContact || "", months: monthsSince(n.lastContact, now),
-      crm: n.crm || "", crmRank: n.crm === "In CRM" ? 2 : n.crm === "Check CRM" ? 1 : 0,
+      unresolved: n.unresolved || "", crm: n.crm || "", crmRank: n.crm === "In CRM" ? 2 : n.crm === "Check CRM" ? 1 : 0,
       search: (n.name + " " + (n.companies || []).join(" ")).toLowerCase(),
     });
   }
-  const raws = entities.filter(e => e.active).map(e => e.raw).sort((a, b) => a - b);
+  const raws = entities.filter(e => e.active && !e.unresolved).map(e => e.raw).sort((a, b) => a - b);
   const cap = Math.log1p(raws[raws.length - 1] || 1);
   for (const e of entities) {
     e.strength = Math.max(e.raw > 0 ? 1 : 0, Math.min(100, Math.round(100 * Math.log1p(e.raw) / cap)));
@@ -365,15 +366,18 @@ function buildModel(G) {
     e.next = nextStep(e);
   }
   const ent = new Map(entities.map(e => [e.id, e]));
+  const cleanup = entities.filter(e => e.unresolved);
+  entities = entities.filter(e => !e.unresolved);
   const programMembers = new Map();
   for (const e of entities) for (const p of e.programList) add(programMembers, p, e.id);
   const hasDates = entities.some(e => e.last);
   const collected = (G.coverage || []).map(c => /read (\d{4}-\d{2}-\d{2})/.exec(c)).find(Boolean);
-  return { G, byId, ent, entities, staff, staffIds, programs, programMembers, orgsOf, peopleOf, social, hasDates,
+  return { G, byId, ent, entities, cleanup, staff, staffIds, programs, programMembers, orgsOf, peopleOf, social, hasDates,
     snapshot: collected ? collected[1] : "" };
 }
 
 function nextStep(e) {
+  if (e.unresolved) return { key: "cleanup", short: `Fix CRM: ${e.unresolved.toLowerCase()}`, text: `${e.unresolved}. Hidden from the map and lists until the CRM record has a full name and organization, or is removed.` };
   if (e.crm === "Not in CRM" && e.active) return { key: "crm", short: "Add to CRM", text: "This tie is not in the CRM. Add a record so the relationship is tracked." };
   if (e.crm === "Check CRM" && e.strength >= MEDIUM) return { key: "crm", short: "Confirm CRM match", text: "A possible CRM record exists but the match is not certain. Confirm it or add a new record." };
   if (e.months !== null && e.months >= 6 && e.strength >= MEDIUM) return { key: "reconnect", short: "Reconnect", text: `Last contact was ${Math.round(e.months)} months ago. Plan a check-in.` };
@@ -416,18 +420,22 @@ function lensTest(id) {
     default: return () => true;
   }
 }
-function baseFilter(skipLens) {
+function filtered(lensId) {
   const q = S.q.trim().toLowerCase();
-  const lens = lensTest(skipLens ? "" : S.lens);
+  const lens = lensTest(lensId);
+  const cleanup = lensId === "cleanup";
   const members = S.program ? M.programMembers.get(S.program) || new Set() : null;
-  return M.entities.filter(e =>
-    (S.scope === "all" || e.active) &&
+  return (cleanup ? M.cleanup : M.entities).filter(e =>
+    (cleanup || S.scope === "all" || e.active) &&
     (!S.type || e.kind === S.type) &&
     (!S.sector || e.group === S.sector) &&
     (!S.staff || e.holders.includes(S.staff)) &&
     (!members || members.has(e.id)) &&
     (!q || e.search.includes(q)) &&
     lens(e));
+}
+function baseFilter(skipLens) {
+  return filtered(skipLens ? "" : S.lens);
 }
 function sorted(list) {
   const f = SORTS[S.sort] || SORTS.strength;
@@ -456,7 +464,7 @@ function syncControls() {
   $("view-list").hidden = S.v !== "list";
   const pre = baseFilter(true);
   $("lenses").innerHTML = LENSES.map(l => {
-    const n = l.id ? pre.filter(lensTest(l.id)).length : pre.length;
+    const n = l.id === "cleanup" ? filtered("cleanup").length : l.id ? pre.filter(lensTest(l.id)).length : pre.length;
     return `<button class="chip" data-lens="${l.id}" aria-pressed="${S.lens === l.id}">${esc(l.label)}<b>${n.toLocaleString()}</b></button>`;
   }).join("");
   const active = ["staff", "program", "sector", "type", "scope"].filter(k => S[k]).length;
@@ -838,6 +846,7 @@ function holdBasis(e, staffId) {
 }
 function overviewPanel(list) {
   const counts = Object.fromEntries(LENSES.filter(l => l.id).map(l => [l.id, list.filter(lensTest(l.id)).length]));
+  counts.cleanup = M.cleanup.length;
   const top = sorted(list).slice(0, 8);
   const card = (id, text) => counts[id] ? `<li class="row"><button class="linkish" data-lens="${id}">${esc(text)}</button><small>${counts[id]}</small></li>` : "";
   return `<div class="kicker">Overview</div><h3>${plural(list.length, "relationship")}</h3>
@@ -847,6 +856,7 @@ function overviewPanel(list) {
       ${card("noowner", "Active ties with no staff owner")}
       ${card("crm", "Ties missing from the CRM")}
       ${M.hasDates ? card("reconnect", "No contact in 6+ months") : ""}
+      ${card("cleanup", "Records that need cleanup in CRM")}
     </ul>${!M.hasDates ? `<p class="note">The "no contact in 6+ months" list needs last-contact dates, which arrive with the next data build.</p>` : ""}</section>
     <section><h4>Strongest relationships</h4><ul>${top.map(itemRow).join("")}</ul></section>
     <section><h4>Data sources</h4><ul>${sourceLines().map(l => `<li class="note">${esc(l)}</li>`).join("")}</ul><p style="margin-top:6px"><button class="linkish" data-about>How strength and ties are measured</button></p></section>
@@ -883,6 +893,7 @@ function renderAbout() {
       <li><b>Held by</b> lists staff named in CRM notes about the person or who have a public social tie. The CRM has no owner field, so many ties show no staffer.</li>
       <li><b>Working relationships</b> are people and organizations with CRM activity, a Board link or a two-way social tie. "Also follow-only social ties" adds accounts a staffer only follows.</li>
       <li><b>Not in CRM</b> means no exact CRM name match. <b>Unconfirmed</b> means a possible match that needs a check.</li>
+      <li><b>Needs cleanup in CRM</b> lists agent or bot accounts, test records and CRM contacts with a first name only. They stay off the map and lists until someone fixes or removes the CRM record.</li>
     </ul>
     <h4 style="margin:0 0 4px;font-size:14px">Data coverage</h4><ul>${cov.map(c => `<li>${esc(c)}</li>`).join("")}</ul>
     <form method="dialog"><button class="btn">Close</button></form>`;

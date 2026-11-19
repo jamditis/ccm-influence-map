@@ -13,6 +13,8 @@ import re
 import sys
 from pathlib import Path
 
+import unresolved
+
 PAGE_CSS = """
 body.page-id-{pid} #main-content .page-header {{ display: none !important; }}
 body.page-id-{pid} #main-content .main-content-background,
@@ -38,6 +40,7 @@ def render(graph_path, page_id):
     template = (Path(__file__).with_name("map.html")).read_text(encoding="utf-8")
     body = re.search(r"<!--ccmnet:start-->(.*)<!--ccmnet:end-->", template, re.S).group(1)
     graph = json.loads(Path(graph_path).read_text(encoding="utf-8"))
+    unresolved.mark(graph)
     raw = json.dumps(graph, ensure_ascii=True, separators=(",", ":")).encode()
     packed = base64.b64encode(gzip.compress(raw, 9, mtime=0)).decode()
     data = f'<script id="ccmnet-graph" type="application/octet-stream" data-encoding="gzip-base64">{packed}</script>'

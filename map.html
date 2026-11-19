@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>CCM influence and interaction map</title>
+<style>
+  :root { color-scheme: light; --ink:#202522; --paper:#f8f6ee; --rule:#c9c8b8; --muted:#50584e; --red:#a42530; --green:#285947; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.45 "Avenir Next", "Trebuchet MS", sans-serif; }
+  main { width:min(1440px,100%); padding:clamp(1rem,4vw,4rem); margin:auto; }
+  h1,h2 { font-family:Georgia,serif; letter-spacing:-.035em; line-height:1.06; margin:0; }
+  h1 { font-size:clamp(2.4rem,6.6vw,5.6rem); max-width:17ch; padding:.34em 0 .45em; }
+  h2 { font-size:1.8rem; margin-bottom:.6rem; }
+  header { border-top:6px solid var(--red); border-bottom:1px solid var(--ink); }
+  header details { margin:0 0 1rem; }
+  summary { cursor:pointer; color:var(--green); font-weight:700; }
+  details ul { padding-left:1.3rem; }
+  details li + li { margin-top:.22rem; }
+  .filters { display:grid; grid-template-columns:1.4fr 1.1fr 1.4fr 1fr 1fr 1fr; gap:1rem; margin:1.25rem 0; }
+  #programControl { grid-column:span 2; }
+  #programControl[hidden], #programInfo[hidden] { display:none; }
+  #programInfo { margin:0 0 1rem; color:var(--muted); }
+  label { display:grid; gap:.35rem; font-size:.86rem; font-weight:700; }
+  select,input,button { font:inherit; color:inherit; }
+  select,input { width:100%; border:1px solid #777a70; border-radius:0; background:#fffefa; padding:.6rem; }
+  :focus-visible { outline:3px solid var(--red); outline-offset:3px; }
+  .workspace { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(17rem,1fr); gap:clamp(1rem,3vw,2.75rem); align-items:start; }
+  .plot { padding:1rem; background:#eeeee1; border:1px solid var(--rule); min-width:0; }
+  canvas { display:block; width:100%; }
+  .legend { display:flex; flex-wrap:wrap; gap:.35rem 1.2rem; font-size:.82rem; color:var(--muted); padding:.6rem 0 .35rem; }
+  .staff-color { color:var(--red); }.org-color { color:var(--green); }
+  p { margin:.55rem 0; }
+  .quiet { font-size:.86rem; color:var(--muted); }
+  aside { border-top:3px solid var(--ink); padding-top:.9rem; overflow-wrap:anywhere; }
+  aside ul { padding-left:1.2rem; max-height:17rem; overflow:auto; }
+  .results { margin-top:2rem; }
+  .scroll { overflow:auto; }
+  table { width:100%; border-collapse:collapse; text-align:left; }
+  th,td { border-bottom:1px solid var(--rule); padding:.57rem .5rem; vertical-align:top; }
+  th { border-bottom:1px solid var(--ink); font-size:.82rem; white-space:nowrap; }
+  td { font-size:.9rem; }
+  .number { text-align:right; font-variant-numeric:tabular-nums; }
+  button { border:0; padding:0; color:var(--green); background:transparent; font-weight:700; text-align:left; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+  button[aria-pressed="true"] { color:var(--red); }
+  #more { display:block; margin-top:1rem; padding:.4rem .65rem; border:1px solid var(--rule); }
+  #more[hidden] { display:none; }
+  @media (max-width:1150px) { .filters { grid-template-columns:repeat(3,1fr); } }
+  @media (max-width:780px) { .filters { grid-template-columns:1fr 1fr; } .workspace { grid-template-columns:1fr; } }
+  @media (max-width:400px) { .filters { grid-template-columns:1fr; } #programControl { grid-column:auto; } .plot { padding:.45rem; } }
+</style>
+<main>
+  <header>
+    <h1>CCM influence and interaction map</h1>
+    <details>
+      <summary>Collection coverage and scoring</summary>
+      <p>The working network includes contacts with CRM interaction or Board activity and journalism or media contacts with at least two mutual staff ties. The default sector filter focuses on journalism, media and local news. The wider view includes public follows and records without collaboration evidence.</p>
+      <p>CRM interaction scores start at four per interaction and halve every 180 days. Board links, program memberships and distinct staff named in CRM help break ties. Connections and reciprocal follows count toward mutual ties. Degree centrality is the share of other records one can reach by a single graph edge.</p>
+      <p>Organization scores include activity from affiliated people. A staff name in a CRM record establishes a mention. “Check CRM” flags limited identity evidence or gaps in the organization directory.</p>
+      <ul id="coverage"></ul>
+    </details>
+  </header>
+  <div class="filters">
+    <label>Search names and companies<input id="query" type="search" autocomplete="off"></label>
+    <label>View<select id="view"><option value="working">Working relationships</option><option value="">All observations</option></select></label>
+    <label>Sector<select id="sector"><option value="press">Journalism, media and local news</option><option value="">All sectors</option></select></label>
+    <label>Staff member<select id="staff"><option value="">All staff</option></select></label>
+    <label>Network<select id="network"><option value="">All networks</option></select></label>
+    <label>CRM status<select id="crm"><option value="">All statuses</option></select></label>
+    <label id="programControl" hidden>Program or event<select id="program"><option value="">All programs and events</option></select></label>
+  </div>
+  <p id="programInfo" class="quiet" hidden></p>
+  <div class="workspace">
+    <section class="plot" aria-label="Relationship overview">
+      <div class="legend"><span class="staff-color">● Staff</span><span>● Person</span><span class="org-color">◆ Organization</span><span>┄ Affiliation</span></div>
+      <canvas id="chart" role="img" aria-label="Staff ties to the first 16 results. Individual relationships are listed in the details panel."></canvas>
+      <p id="plotCaption" class="quiet"></p>
+    </section>
+    <aside aria-labelledby="selectedTitle">
+      <h2 id="selectedTitle">Relationship details</h2>
+      <p id="selectedFacts"></p>
+      <ul id="links"></ul>
+    </aside>
+  </div>
+  <section class="results" aria-labelledby="resultHeading">
+    <h2 id="resultHeading">People and organizations</h2>
+    <p id="resultCount" class="quiet" aria-live="polite"></p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th scope="col">Name</th><th scope="col">Sector / company</th><th scope="col">CRM status</th><th class="number" scope="col">CRM interactions</th><th class="number" scope="col">Recency score</th><th class="number" scope="col">Staff named</th><th class="number" scope="col">Board links</th><th class="number" scope="col">Mutual ties</th></tr></thead>
+        <tbody id="results"></tbody>
+      </table>
+    </div>
+    <button type="button" id="more">Show 60 more</button>
+  </section>
+</main>
+<script id="graph" type="application/json">/*__GRAPH__*/</script>
+<script>
+  "use strict";
+  const graph = JSON.parse(document.getElementById("graph").textContent);
+  const byId = new Map(graph.nodes.map(node => [node.id, node]));
+  const staff = graph.nodes.filter(node => node.kind === "staff").sort((a,b) => a.name.localeCompare(b.name));
+  const staffSide = graph.nodes.filter(node => node.kind === "internal").concat(staff);
+  const outside = graph.nodes.filter(node => node.kind === "person" || node.kind === "organization");
+  const media = new Set(graph.mediaSectors);
+  const programs = graph.nodes.filter(node => node.catalog).sort((a,b) => a.name.localeCompare(b.name));
+  const programMembers = new Map(programs.map(node => [node.id, new Set()]));
+  const edgesById = new Map(graph.nodes.map(node => [node.id, []]));
+  for (const edge of graph.edges) {
+    edgesById.get(edge.source).push(edge);
+    edgesById.get(edge.target).push(edge);
+    programMembers.get(edge.target)?.add(edge.source);
+  }
+  const affiliations = new Map();
+  for (const [staffId, orgId, platform] of graph.affiliations) {
+    if (!affiliations.has(orgId)) affiliations.set(orgId, []);
+    affiliations.get(orgId).push([staffId, platform]);
+  }
+  const get = id => document.getElementById(id);
+  const edgeOther = (edge, id) => edge.source === id ? edge.target : edge.source;
+  const controls = ["query", "view", "sector", "staff", "network", "crm", "program"].map(get);
+  const [query, view, sector, staffFilter, network, crm, program] = controls;
+  const chart = get("chart");
+  let selected = "", pageSize = 60, shown = [], chartTargets = [];
+  function item(parent, tag, value) {
+    const element = document.createElement(tag);
+    element.textContent = value;
+    parent.append(element);
+    return element;
+  }
+  for (const person of staff) item(staffFilter,"option", person.name).value = person.id;
+  for (const name of [...new Set(outside.map(node => node.sector))].sort()) item(sector,"option",name);
+  for (const name of [...new Set(graph.edges.map(edge => edge.network))].sort()) item(network,"option",name);
+  for (const status of [...new Set(outside.map(node => node.crm))].sort()) item(crm,"option",status);
+  if (outside.some(node => node.hasContact === false)) item(crm,"option","No contact on file");
+  for (const node of programs) item(program,"option",node.name).value = node.id;
+  get("programControl").hidden = !programs.length;
+  for (const line of graph.coverage) item(get("coverage"),"li",line);
+
+  function neighborhood(id) {
+    return network.value ? edgesById.get(id).filter(edge => edge.network === network.value) : edgesById.get(id);
+  }
+  function contacts(node) {
+    const direct = new Map();
+    for (const edge of neighborhood(node.id)) {
+      const other = byId.get(edgeOther(edge, node.id));
+      if (other.kind === "staff" || other.kind === "internal") direct.set(other.id, false);
+    }
+    for (const [id, platform] of affiliations.get(node.id) || []) {
+      if ((!network.value || platform === network.value) && !direct.has(id)) direct.set(id, true);
+    }
+    return direct;
+  }
+  function matches(node, text) {
+    if (program.value && !programMembers.get(program.value).has(node.id)) return false;
+    if (view.value && !node.working) return false;
+    if (sector.value === "press" && !media.has(node.sector)) return false;
+    if (sector.value && sector.value !== "press" && node.sector !== sector.value) return false;
+    if (crm.value === "No contact on file" && node.hasContact !== false) return false;
+    if (crm.value && crm.value !== "No contact on file" && node.crm !== crm.value) return false;
+    if (text && ![node.name, ...node.companies].join(" ").toLowerCase().includes(text)) return false;
+    if (network.value && !neighborhood(node.id).length) return false;
+    return !staffFilter.value || contacts(node).has(staffFilter.value);
+  }
+  function showDetails() {
+    const node = byId.get(selected);
+    const links = get("links");
+    links.replaceChildren();
+    get("selectedTitle").textContent = node ? node.name : "Relationship details";
+    if (!node) {
+      get("selectedFacts").textContent = "Select a person or organization to see their relationships.";
+      return;
+    }
+    const facts = [node.kind, node.sector, ...node.companies, node.crm, node.confidence,
+      `${node.programs} linked programs`, `social reach ${node.reach}`, `social interaction weight ${node.weight}`,
+      `centrality ${(node.centrality * 100).toFixed(2)}%`];
+    if (node.hasContact === false) facts.push("No contact on file");
+    get("selectedFacts").textContent = facts.join(" · ");
+    const entries = neighborhood(node.id).map(edge => ({
+      edge, other: byId.get(edgeOther(edge,node.id)),
+    })).filter(({other}) => !staffFilter.value || other.kind !== "staff" || other.id === staffFilter.value)
+       .sort((a,b) => (b.other.id === program.value) - (a.other.id === program.value) ||
+                          (b.other.kind === "staff") - (a.other.kind === "staff") ||
+                          b.edge.count - a.edge.count || a.other.name.localeCompare(b.other.name));
+    for (const {edge, other} of entries) {
+      item(links,"li",`${other.name} · ${edge.network} ${edge.relation}${edge.count > 1 ? ` × ${edge.count}` : ""}`);
+    }
+    for (const [id, indirect] of contacts(node)) {
+      if (indirect && (!staffFilter.value || id === staffFilter.value)) {
+        item(links,"li",`${byId.get(id).name} · through an affiliated person`);
+      }
+    }
+    if (!links.childElementCount) item(links,"li","No relationships in this view.");
+  }
+  function draw() {
+    const nodes = shown.slice(0, 16);
+    if (selected && shown.findIndex(node => node.id === selected) >= 16) nodes[nodes.length - 1] = byId.get(selected);
+    const ties = nodes.map(node => contacts(node));
+    const left = staffSide.filter(person => (!staffFilter.value || person.id === staffFilter.value) &&
+                                         ties.some(contact => contact.has(person.id)));
+    const width = chart.clientWidth;
+    const height = Math.max(100, Math.max(left.length, nodes.length) * 25 + 28);
+    const ratio = window.devicePixelRatio || 1;
+    chart.style.height = `${height}px`;
+    chart.width = width * ratio;
+    chart.height = height * ratio;
+    const ctx = chart.getContext("2d");
+    ctx.scale(ratio, ratio);
+    ctx.font = width < 390 ? "11px Georgia" : "13px Georgia";
+    ctx.textBaseline = "middle";
+    const point = (index, count) => height * (index + 1) / (count + 1);
+    const x1 = Math.round(width * .35), x2 = Math.round(width * .6);
+    const leftY = new Map(left.map((node,index) => [node.id, point(index,left.length)]));
+    chartTargets = nodes.map((node,index) => ({id:node.id, y:point(index,nodes.length)}));
+    for (const [index, node] of nodes.entries()) {
+      const y = chartTargets[index].y;
+      for (const [id, indirect] of ties[index]) {
+        if (!leftY.has(id)) continue;
+        const start = leftY.get(id);
+        ctx.beginPath();
+        ctx.moveTo(x1,start);
+        ctx.bezierCurveTo((x1+x2)/2,start,(x1+x2)/2,y,x2,y);
+        ctx.strokeStyle = node.id === selected ? "#a42530" : "#848c79";
+        ctx.lineWidth = node.id === selected ? 1.7 : .8;
+        ctx.setLineDash(indirect ? [3,3] : []);
+        ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+    for (const person of left) {
+      const y = leftY.get(person.id);
+      ctx.fillStyle = "#a42530";
+      ctx.textAlign = "right";
+      ctx.fillText(person.name, x1 - 8, y, x1 - 10);
+      ctx.fillRect(x1 - 2, y - 2, 4, 4);
+    }
+    for (const [index,node] of nodes.entries()) {
+      const y = chartTargets[index].y;
+      ctx.fillStyle = node.id === selected ? "#a42530" : node.kind === "organization" ? "#285947" : "#202522";
+      ctx.textAlign = "left";
+      ctx.fillText(node.name, x2 + 8, y, Math.max(1, width - x2 - 9));
+      ctx.beginPath();
+      if (node.kind === "organization") {
+        ctx.moveTo(x2,y-4); ctx.lineTo(x2+4,y); ctx.lineTo(x2,y+4); ctx.lineTo(x2-4,y);
+      } else {
+        ctx.arc(x2,y,3,0,Math.PI*2);
+      }
+      ctx.fill();
+    }
+    get("plotCaption").textContent = nodes.length ? `Showing staff ties for ${nodes.length} of ${shown.length} results.` : "No matching relationships.";
+  }
+  function choose(id) {
+    selected = id;
+    showDetails();
+    for (const button of get("results").querySelectorAll("button")) {
+      button.setAttribute("aria-pressed", String(button.dataset.id === selected));
+    }
+    draw();
+  }
+  function render() {
+    const programInfo = get("programInfo");
+    programInfo.hidden = !program.value;
+    if (program.value) {
+      const catalog = byId.get(program.value).catalog;
+      programInfo.textContent = [catalog.kind, catalog.status,
+        catalog.owners.length ? `Owners: ${catalog.owners.join(", ")}` : "",
+        catalog.funders.length ? `Funders: ${catalog.funders.join(", ")}` : "",
+        catalog.fundingSources.length ? `Funding sources: ${catalog.fundingSources.join(", ")}` : "",
+        `CCM wiki: ${catalog.source}`].filter(Boolean).join(" · ");
+    }
+    shown = outside.filter(node => matches(node, query.value.trim().toLowerCase()));
+    if (!shown.some(node => node.id === selected)) selected = "";
+    const body = get("results");
+    body.replaceChildren();
+    for (const node of shown.slice(0, pageSize)) {
+      const row = body.insertRow();
+      const button = item(row.insertCell(),"button",node.name);
+      button.type = "button";
+      button.dataset.id = node.id;
+      button.setAttribute("aria-pressed", String(node.id === selected));
+      button.addEventListener("click", () => choose(node.id));
+      item(row,"td",[node.sector,...node.companies].join(" · "));
+      const status = item(row,"td",node.hasContact === false ? node.crm + " · No contact on file" : node.crm);
+      status.title = node.confidence;
+      for (const value of [node.crmCount,node.crmWeight.toFixed(1),node.crmStaff.length,node.projects,node.mutual]) {
+        item(row,"td",value).className = "number";
+      }
+    }
+    get("resultCount").textContent = `Showing ${Math.min(shown.length,pageSize)} of ${shown.length} results.`;
+    get("more").hidden = pageSize >= shown.length;
+    showDetails();
+    draw();
+  }
+  crm.addEventListener("change", () => {
+    if (crm.value === "No contact on file") {
+      view.value = "";
+      sector.value = "";
+    }
+  });
+  program.addEventListener("change", () => {
+    if (program.value) {
+      view.value = "";
+      sector.value = "";
+    }
+  });
+  query.addEventListener("input", () => { pageSize = 60; render(); });
+  for (const control of controls.slice(1)) control.addEventListener("change", () => { pageSize = 60; render(); });
+  get("more").addEventListener("click", () => { pageSize += 60; render(); });
+  chart.addEventListener("click", event => {
+    const point = chartTargets.find(target => Math.abs(target.y - event.offsetY) <= 10);
+    if (point && event.offsetX >= chart.clientWidth * .57) choose(point.id);
+  });
+  new ResizeObserver(draw).observe(chart.parentElement);
+  render();
+</script>
+</html>

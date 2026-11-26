@@ -81,12 +81,7 @@ def bsky_rows(person, handle, cutoff, api=bsky_api):
         add(actor, "follow", "")
 
     def replies(thread):
-        stack = list(thread.get("replies", []))
-        while stack:
-            part = stack.pop()
-            if "post" in part:
-                yield part["post"]
-                stack.extend(part.get("replies", []))
+        return [part["post"] for part in thread.get("replies", []) if "post" in part]
 
     posts = 0
     for item in collect_list("app.bsky.feed.getAuthorFeed", "feed", limit=50, pages=4,
@@ -109,8 +104,7 @@ def bsky_rows(person, handle, cutoff, api=bsky_api):
             for actor in collect_list("app.bsky.feed.getRepostedBy", "repostedBy", uri=uri):
                 add(actor, "repost", uri)
         if post.get("replyCount"):
-            thread = api("app.bsky.feed.getPostThread", uri=uri, depth=2, parentHeight=0)["thread"]
-            coverage.append("reply depth ≤ 2")
+            thread = api("app.bsky.feed.getPostThread", uri=uri, depth=1, parentHeight=0)["thread"]
             for reply in replies(thread):
                 add(reply["author"], "comment", reply["uri"])
     return did, rows, posts, sorted(set(coverage))
@@ -118,6 +112,8 @@ def bsky_rows(person, handle, cutoff, api=bsky_api):
 
 def bluesky(staff, folder):
     cutoff = datetime.now(timezone.utc) - timedelta(days=WINDOW)
+    path = folder / "observations" / "bluesky.json"
+    previous = json.loads(path.read_text()) if path.is_file() else {"observations": [], "staff_accounts": {}}
     coverage = []
     rows = []
     known = {}
@@ -129,15 +125,20 @@ def bluesky(staff, folder):
         try:
             did, observations, posts, caps = bsky_rows(person, handle, cutoff)
         except (HTTPError, URLError, TimeoutError, KeyError, ValueError) as exc:
-            coverage.append(f"{person['name']} · Bluesky: read failed ({type(exc).__name__}).")
+            kept = [row for row in previous["observations"] if row["staff"] == person["id"]]
+            rows.extend(kept)
+            if person["id"] in previous["staff_accounts"]:
+                known[person["id"]] = previous["staff_accounts"][person["id"]]
+            coverage.append(f"{person['name']} · Bluesky: read failed ({type(exc).__name__}). "
+                            f"Kept {len(kept)} observations from the previous collection.")
             continue
         known[person["id"]] = did
         rows.extend(asdict(row) for row in observations)
         note = f" Coverage limits: {', '.join(caps)}." if caps else ""
         coverage.append(f"{person['name']} · Bluesky: {posts} public authored posts in the last {WINDOW} days "
                         f"and {sum(row.relation == 'follow' for row in observations)} outgoing follows.{note}")
-    put(folder / "observations" / "bluesky.json", {"observations": rows, "coverage": coverage, "staff_accounts": known})
-    print(f"Bluesky: {len(known)} accounts read, {len(rows)} observations.")
+    put(path, {"observations": rows, "coverage": coverage, "staff_accounts": known})
+    print(f"Bluesky: {len(known)} accounts, {len(rows)} observations.")
 
 
 def bluesky_mutual(folder):

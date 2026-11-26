@@ -351,7 +351,7 @@ function buildModel(G) {
   for (const n of G.nodes) {
     if (n.kind !== "person" && n.kind !== "organization") continue;
     const soc = social.get(n.id) || new Map();
-    const engaged = [...soc].filter(([, rel]) => Object.keys(rel).some(r => r !== "follow" && r !== "affiliation")).map(([id]) => id);
+    const engaged = [...soc].filter(([, rel]) => rel.connection || rel.mutual_follow).map(([id]) => id);
     const holders = [...new Set([...(n.crmStaff || []), ...engaged])].filter(id => staffIds.has(id));
     const followers = [...soc.keys()].filter(id => !holders.includes(id));
     const progIds = [...(programOf.get(n.id) || [])];
@@ -440,7 +440,7 @@ function lensTest(id) {
     case "single": return e => e.holders.length === 1 && e.strength >= MEDIUM;
     case "reconnect": return e => e.months !== null && e.months >= 6;
     case "noowner": return e => e.holders.length === 0 && (e.node.crmCount || 0) > 0;
-    case "crm": return e => e.crm !== "In CRM" && e.crm !== "CRM unavailable" && e.active;
+    case "crm": return e => e.crm === "Not in CRM" && e.active;
     default: return () => true;
   }
 }
@@ -854,7 +854,7 @@ function entityPanel(e) {
     <div>${crmTag(e)}<span class="tag">${esc(e.tier)} tie · ${e.strength}/100</span></div>
     ${e.next ? `<div class="next"><b>Suggested next step: ${esc(e.next.short.toLowerCase())}</b>${esc(e.next.text)}</div>` : `<div class="next calm"><b>No action flagged</b>This relationship has an owner, a CRM record and recent activity, or it is too light to act on.</div>`}
     <section><h4>Who at CCM holds this tie</h4>${e.holders.length ? `<ul>${e.holders.map(id => `<li class="row"><button class="linkish" data-sel="${esc(id)}">${esc(M.byId.get(id).name)}</button><small>${esc(holdBasis(e, id))}</small></li>`).join("")}</ul>` : `<p class="note">No staffer recorded. The CRM does not log who owns a contact, and no CRM note or two-way social tie names a staffer.</p>`}
-      ${e.followers.length ? `<p class="note" style="margin-top:6px">Followed on social media by ${esc(e.followers.map(id => M.byId.get(id).name).join(", "))}.</p>` : ""}</section>
+      ${e.followers.length ? `<p class="note" style="margin-top:6px">One-way social ties with ${esc(e.followers.map(id => M.byId.get(id).name).join(", "))}.</p>` : ""}</section>
     <section><h4>Contact history</h4><div class="stats"><div class="stat"><b>${(n.crmCount || 0).toLocaleString()}</b><span>CRM interactions</span></div><div class="stat"><b>${n.recent90 ?? "–"}</b><span>last 90 days</span></div><div class="stat"><b style="font-size:15px">${e.last ? esc(fmtDate(e.last)) : "–"}</b><span>last contact</span></div></div>
       ${byType ? `<div class="bars" style="margin-top:10px">${byType.map(([t, c]) => `<div><span>${esc(typeLabel(t))}</span><i style="width:${Math.max(2, 100 * c / maxT)}%"></i><span>${c}</span></div>`).join("")}</div>` : ""}
       ${!M.hasDates ? `<p class="note" style="margin-top:8px">Dates and interaction types arrive with the next data build.</p>` : ""}</section>
@@ -922,7 +922,7 @@ function renderAbout() {
     <p>The map combines the CCM CRM (contacts, logged interactions, Board items and programs) with public social media ties of CCM staff. It is for internal planning. Do not share it outside CCM.</p>
     <ul>
       <li><b>Strength</b> (0 to 100) adds up recent CRM interactions (newer counts more), Board items, programs and social ties, on a log scale. Strong is 55 and up; medium is 25 to 54.</li>
-      <li><b>Held by</b> lists staff named in CRM notes about the person or who have a public social tie. The CRM has no owner field, so many ties show no staffer.</li>
+      <li><b>Held by</b> lists staff named in CRM notes about the person or who have a two-way social tie (a LinkedIn connection or a mutual follow). Likes, reposts and replies count toward strength but do not make a staffer a holder. The CRM has no owner field, so many ties show no staffer.</li>
       <li><b>Working relationships</b> are people and organizations with CRM activity, a Board link or a two-way social tie. "Also one-way social ties" adds accounts linked to staff only by a follow, a like, a repost or a reply.</li>
       <li><b>Not in CRM</b> means no exact CRM name match. <b>Unconfirmed</b> means a possible match that needs a check.</li>
       <li><b>Needs cleanup in CRM</b> lists agent or bot accounts, test records and CRM contacts with a first name only. They stay off the map and lists until someone fixes or removes the CRM record.</li>

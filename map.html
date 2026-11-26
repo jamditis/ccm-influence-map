@@ -1,0 +1,1006 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCM relationship map</title>
+<style>html,body{margin:0;height:100%}body{background:#fff}</style>
+<!--ccmnet:start-->
+<div id="ccmnet" class="ccmnet-host"></div>
+<script id="ccmnet-graph" type="application/json">/*__GRAPH__*/</script>
+<script id="ccmnet-app">
+(() => {
+"use strict";
+
+const CSS = `
+:host { all: initial; display: block; height: var(--ccmnet-height, 100vh); min-height: 560px;
+  font: 15px/1.45 Roboto, "Helvetica Neue", Arial, sans-serif; color: #1a1a1a; background: #fff;
+  --ink: #1a1a1a; --ink2: #474747; --muted: #6a6a6a; --line: #e4e2dd; --soft: #f5f4f1; --red: #d31f1f;
+  --red-ink: #b3181b; --s-media: #2a78d6; --s-uni: #eb6834; --s-civic: #1baf7a; --s-other: #9a9893; --staff: #1a1a1a; }
+* { box-sizing: border-box; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.app { display: grid; grid-template-rows: auto auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); height: 100%; }
+
+/* top bar */
+.bar { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.title { display: flex; flex-direction: column; min-width: 0; margin-right: auto; }
+.title h2 { margin: 0; font-size: 20px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
+.title h2::before { content: ""; display: inline-block; width: 10px; height: 10px; background: var(--red); margin-right: 8px; vertical-align: 2px; }
+.title span { font-size: 13px; color: var(--muted); }
+.search { position: relative; flex: 0 1 340px; min-width: 200px; }
+.search input { width: 100%; height: 38px; padding: 0 12px 0 34px; border: 1px solid #c9c7c1; border-radius: 6px; background: #fff; }
+.search svg { position: absolute; left: 11px; top: 11px; width: 16px; height: 16px; color: var(--muted); }
+.tabs { display: inline-flex; border: 1px solid #c9c7c1; border-radius: 6px; overflow: hidden; }
+.tabs button { border: 0; background: #fff; padding: 0 14px; height: 36px; font-weight: 500; }
+.tabs button[aria-selected="true"] { background: var(--ink); color: #fff; }
+.actions { display: flex; gap: 6px; }
+.btn { height: 38px; padding: 0 12px; border: 1px solid #c9c7c1; border-radius: 6px; background: #fff; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn:hover { border-color: var(--ink2); }
+.btn svg { width: 16px; height: 16px; }
+.btn.quiet { border-color: transparent; color: var(--red-ink); padding: 0 8px; }
+.btn.quiet:hover { text-decoration: underline; border-color: transparent; }
+
+/* filters */
+.filters { display: flex; gap: 10px 18px; align-items: flex-end; padding: 10px 20px 12px; border-bottom: 1px solid var(--line); background: var(--soft); flex-wrap: wrap; }
+.lenses { display: flex; gap: 6px; flex-wrap: wrap; flex: 1 1 520px; }
+.chip { border: 1px solid #c9c7c1; background: #fff; border-radius: 999px; height: 32px; padding: 0 12px; font-size: 13.5px; display: inline-flex; gap: 7px; align-items: center; }
+.chip b { font-weight: 700; font-size: 12px; color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: #fff; }
+.chip[aria-pressed="true"] b { color: #fff; }
+.selects { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink2); font-weight: 500; }
+.field select { height: 32px; min-width: 130px; max-width: 220px; border: 1px solid #c9c7c1; border-radius: 6px; background: #fff; padding: 0 8px; font-size: 13.5px; }
+.filter-toggle { display: none; }
+
+/* body */
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 390px; min-height: 0; }
+.view { position: relative; min-height: 0; min-width: 0; }
+.view[hidden] { display: none; }
+.panel { border-left: 1px solid var(--line); overflow: auto; min-height: 0; background: #fff; }
+.panel-inner { padding: 20px 22px 32px; }
+
+/* network */
+.net { overflow: hidden; background: #fbfbfa; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas[hidden] { display: none; }
+canvas.dragging { cursor: grabbing; }
+.legend { position: absolute; left: 14px; bottom: 14px; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; max-width: 260px; }
+.legend div { display: flex; align-items: center; gap: 8px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.legend i.staff { background: var(--staff); box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--staff); width: 9px; height: 9px; }
+.legend small { color: var(--muted); }
+.zoom { position: absolute; right: 14px; top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.zoom .btn { width: 38px; justify-content: center; padding: 0; font-size: 18px; }
+.net-note { position: absolute; left: 14px; top: 12px; font-size: 12.5px; color: var(--muted); background: rgba(251,251,250,.9); padding: 2px 6px; border-radius: 4px; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: #fff; font-size: 12.5px; padding: 6px 9px; border-radius: 6px; max-width: 260px; transform: translate(12px, 12px); }
+.tip[hidden] { display: none; }
+.tip b { display: block; font-size: 13px; }
+
+/* list */
+.list { overflow: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+thead th { position: sticky; top: 0; background: #fff; z-index: 1; text-align: left; font-weight: 500; font-size: 12.5px; color: var(--ink2); border-bottom: 1px solid #c9c7c1; padding: 0; white-space: nowrap; }
+thead th button { border: 0; background: none; padding: 10px 10px; width: 100%; text-align: inherit; font-weight: 500; }
+thead th[aria-sort] button { color: var(--ink); font-weight: 700; }
+thead th[aria-sort="descending"] button::after { content: " \\2193"; }
+thead th[aria-sort="ascending"] button::after { content: " \\2191"; }
+tbody tr { border-bottom: 1px solid var(--line); cursor: pointer; }
+tbody tr:hover { background: var(--soft); }
+tbody tr[aria-selected="true"] { background: #fbeceb; }
+td { padding: 9px 10px; vertical-align: top; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+th.num { text-align: right; }
+td .nm { font-weight: 700; color: var(--ink); }
+td .sub { color: var(--muted); font-size: 12.5px; display: block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.meter { display: inline-flex; align-items: center; gap: 7px; }
+.meter span { display: inline-block; width: 56px; height: 6px; background: #ebe9e4; border-radius: 3px; overflow: hidden; }
+.meter span i { display: block; height: 100%; background: var(--ink); border-radius: 3px; }
+.tag { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 999px; border: 1px solid #c9c7c1; white-space: nowrap; margin: 0 4px 3px 0; }
+.tag.warn { border-color: #e7b7b4; background: #fbeceb; color: var(--red-ink); }
+.tag.ok { border-color: #cfd8cf; background: #f1f6f1; color: #2d5a2f; }
+.more { display: block; margin: 14px auto 24px; }
+.empty { padding: 48px 24px; text-align: center; color: var(--ink2); }
+.empty strong { display: block; font-size: 17px; color: var(--ink); margin-bottom: 6px; }
+.empty .btn { margin-top: 12px; }
+
+/* panel */
+.panel h3 { margin: 0 0 2px; font-size: 22px; line-height: 1.2; letter-spacing: -.01em; }
+.panel .kicker { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+.panel .org { color: var(--ink2); margin-bottom: 10px; }
+.panel section { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 16px; }
+.panel h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink2); }
+.panel p { margin: 0 0 8px; }
+.panel ul { margin: 0; padding: 0; list-style: none; }
+.panel li { padding: 5px 0; }
+.next { background: #fbeceb; border-left: 4px solid var(--red); padding: 10px 12px; border-radius: 0 6px 6px 0; margin-top: 12px; }
+.next.calm { background: var(--soft); border-left-color: #9a9893; }
+.next b { display: block; margin-bottom: 2px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { background: var(--soft); border-radius: 6px; padding: 8px 10px; }
+.stat b { display: block; font-size: 20px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 12px; color: var(--ink2); }
+.bars div { display: grid; grid-template-columns: 110px 1fr 36px; gap: 8px; align-items: center; font-size: 13px; padding: 2px 0; }
+.bars i { display: block; height: 8px; background: var(--ink); border-radius: 0 4px 4px 0; min-width: 2px; }
+.bars span:last-child { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink2); }
+.linkish { border: 0; background: none; padding: 0; color: var(--red-ink); text-align: left; font-weight: 500; }
+.linkish:hover { text-decoration: underline; }
+.row { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.row small { color: var(--muted); white-space: nowrap; }
+.why li { padding: 3px 0 3px 14px; position: relative; color: var(--ink2); }
+.why li::before { content: ""; position: absolute; left: 0; top: 11px; width: 6px; height: 6px; background: var(--red); border-radius: 50%; }
+.close { display: none; }
+.note { font-size: 12.5px; color: var(--muted); }
+.toast { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 14px; border-radius: 6px; font-size: 13.5px; }
+.toast[hidden] { display: none; }
+dialog { max-width: 640px; border: 0; border-radius: 10px; padding: 24px 26px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog h3 { margin: 0 0 10px; font-size: 20px; }
+dialog ul { padding-left: 18px; margin: 8px 0 14px; }
+dialog li { margin: 4px 0; }
+.loading { display: grid; place-items: center; height: 100%; color: var(--muted); }
+
+@media (max-width: 1100px) {
+  .main { grid-template-columns: minmax(0, 1fr) 340px; }
+  .title span { display: none; }
+  .actions .lbl { display: none; }
+  .field select { min-width: 0; max-width: 170px; }
+  .lenses { flex-basis: 100%; }
+}
+@media (max-width: 760px) {
+  :host { height: auto; min-height: 0; }
+  .app { height: var(--ccmnet-height, 100vh); }
+  .bar { padding: 10px 12px; gap: 8px; }
+  .title { flex: 1 1 100%; }
+  .title h2 { font-size: 18px; }
+  .title span { display: none; }
+  .search { flex: 1 1 100%; }
+  .search input { height: 36px; }
+  .tabs { flex: 1 1 0; min-width: 130px; }
+  .tabs button { flex: 1; height: 34px; padding: 0 8px; }
+  .actions { flex: none; }
+  .actions .btn { height: 36px; padding: 0 9px; }
+  .actions .lbl { display: none; }
+  .filter-toggle { display: inline-flex; }
+  .filters { padding: 8px 12px; }
+  .filters .selects { display: none; }
+  .filters.open .selects { display: flex; }
+  .lenses { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .chip { flex: none; }
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .panel { position: absolute; left: 0; right: 0; bottom: 0; max-height: 72%; border-left: 0; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0; box-shadow: 0 -10px 30px rgba(0,0,0,.18); z-index: 5; display: none; }
+  .app.has-sel .panel { display: block; }
+  .main { position: relative; }
+  .close { display: inline-flex; position: sticky; top: 0; float: right; margin: -8px -10px 0 0; }
+  .legend { font-size: 11.5px; left: 8px; bottom: 8px; padding: 6px 9px; flex-direction: row; flex-wrap: wrap; gap: 2px 10px; right: 8px; max-width: none; }
+  .legend small { display: none; }
+  .net-note { right: 56px; }
+  .zoom { right: 8px; top: 8px; }
+  td .sub { max-width: 170px; }
+  .hide-m { display: none; }
+}
+`;
+
+const ICON = {
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>',
+  info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>',
+  filter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>',
+};
+
+const HTML = `
+<div class="app" id="app">
+  <header class="bar">
+    <div class="title"><h2>Relationship map</h2><span id="snapshot"></span></div>
+    <label class="search"><span class="sr">Search people, organizations and staff</span>${ICON.search}<input id="q" type="search" placeholder="Search people, organizations, staff" autocomplete="off"></label>
+    <div class="tabs" role="tablist" aria-label="View">
+      <button role="tab" id="tab-network" data-view="network" aria-controls="view-network">Network</button>
+      <button role="tab" id="tab-list" data-view="list" aria-controls="view-list">List</button>
+    </div>
+    <div class="actions">
+      <button class="btn filter-toggle" id="filter-toggle" aria-expanded="false">${ICON.filter}<span>Filters</span></button>
+      <button class="btn" id="copy" title="Copy a link to this exact view">${ICON.link}<span class="lbl">Copy link</span></button>
+      <button class="btn" id="csv" title="Download the current list as a spreadsheet">${ICON.down}<span class="lbl">CSV</span></button>
+      <button class="btn" id="about" title="Where the data comes from">${ICON.info}<span class="lbl">About</span></button>
+    </div>
+  </header>
+  <div class="filters" id="filters">
+    <div class="lenses" role="group" aria-label="Planning lists" id="lenses"></div>
+    <div class="selects">
+      <label class="field">Staff member<select id="f-staff"></select></label>
+      <label class="field">Program<select id="f-program"></select></label>
+      <label class="field">Sector<select id="f-sector"></select></label>
+      <label class="field">Show<select id="f-type">
+        <option value="">People and organizations</option><option value="person">People only</option><option value="organization">Organizations only</option></select></label>
+      <label class="field">Include<select id="f-scope">
+        <option value="">Working relationships</option><option value="all">Also one-way social ties</option></select></label>
+      <button class="btn quiet" id="reset">Reset all</button>
+    </div>
+  </div>
+  <div class="main" id="main">
+    <section class="view net" id="view-network" role="tabpanel" aria-labelledby="tab-network">
+      <canvas id="canvas" tabindex="0" aria-label="Network of CCM staff and the people and organizations they work with. Use the List view for the same data as a table."></canvas>
+      <div class="net-note" id="net-note"></div>
+      <div class="zoom"><button class="btn" id="zin" aria-label="Zoom in">+</button><button class="btn" id="zout" aria-label="Zoom out">&minus;</button><button class="btn" id="zfit" aria-label="Fit to screen" style="font-size:12px">Fit</button></div>
+      <div class="legend" id="legend"></div>
+      <div class="tip" id="tip" hidden></div>
+      <div class="empty" id="net-empty" hidden></div>
+    </section>
+    <section class="view list" id="view-list" role="tabpanel" aria-labelledby="tab-list" hidden></section>
+    <aside class="panel" id="panel" aria-label="Details" aria-live="polite"><div class="panel-inner" id="panel-inner"></div></aside>
+  </div>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <dialog id="about-dlg" aria-labelledby="about-h"></dialog>
+</div>`;
+
+/* ---------- constants ---------- */
+const GROUPS = [
+  { id: "media", label: "Journalism and media", color: "var(--s-media)", hex: "#2a78d6" },
+  { id: "uni", label: "Universities", color: "var(--s-uni)", hex: "#eb6834" },
+  { id: "civic", label: "Funders and civic groups", color: "var(--s-civic)", hex: "#1baf7a" },
+  { id: "other", label: "Other or unknown", color: "var(--s-other)", hex: "#9a9893" },
+];
+const GROUP = Object.fromEntries(GROUPS.map(g => [g.id, g]));
+const LENSES = [
+  { id: "", label: "All relationships" },
+  { id: "strong", label: "Strongest" },
+  { id: "single", label: "One staffer only" },
+  { id: "reconnect", label: "No contact in 6+ months" },
+  { id: "noowner", label: "No staff owner" },
+  { id: "crm", label: "Not in CRM" },
+  { id: "cleanup", label: "Needs cleanup in CRM" },
+];
+const SORTS = {
+  name: (a, b) => a.name.localeCompare(b.name),
+  strength: (a, b) => a.strength - b.strength || a.raw - b.raw,
+  last: (a, b) => (a.last || "").localeCompare(b.last || ""),
+  holders: (a, b) => a.holders.length - b.holders.length,
+  programs: (a, b) => a.programList.length - b.programList.length,
+  crm: (a, b) => a.crmRank - b.crmRank,
+};
+const DAY = 864e5;
+const TYPE_LABEL = { slack: "Slack messages", slack_dm: "Slack DMs", slack_mention: "Slack mentions", email: "Emails", email_sent: "Emails sent", meeting: "Meetings", note: "Notes", research: "Research notes", event: "Events", call: "Calls" };
+const typeLabel = t => TYPE_LABEL[t] || (t.charAt(0).toUpperCase() + t.slice(1)).replace(/_/g, " ");
+const STRONG = 55, MEDIUM = 25;
+
+/* ---------- mount ---------- */
+const host = document.getElementById("ccmnet");
+const shadow = host.attachShadow({ mode: "open" });
+shadow.innerHTML = `<style>${CSS}</style>${HTML}`;
+const $ = id => shadow.getElementById(id);
+const app = $("app");
+
+function fitHeight() {
+  const header = document.getElementById("header-section");
+  let fixedTop = 0;
+  if (header && getComputedStyle(header).position === "fixed") {
+    fixedTop = header.getBoundingClientRect().bottom;
+    for (const el of header.querySelectorAll("*")) { const r = el.getBoundingClientRect(); if (r.height && r.width && r.top < 200) fixedTop = Math.max(fixedTop, r.bottom); }
+    fixedTop = Math.ceil(Math.min(fixedTop, 160));
+  }
+  host.style.marginTop = fixedTop + "px";
+  const top = host.getBoundingClientRect().top + window.scrollY;
+  const h = Math.max(520, window.innerHeight - Math.max(0, Math.min(top, 160)));
+  host.style.setProperty("--ccmnet-height", h + "px");
+}
+fitHeight();
+window.addEventListener("resize", fitHeight);
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : (many || one + "s")}`;
+const fmtDate = iso => iso ? new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+const shortName = name => { const p = name.split(" "); return p.length > 1 ? `${p[0]} ${p[p.length - 1][0]}.` : name; };
+
+async function loadGraph() {
+  const el = document.getElementById("ccmnet-graph");
+  if (el.dataset.encoding === "gzip-base64") {
+    const bin = Uint8Array.from(atob(el.textContent.trim()), c => c.charCodeAt(0));
+    const text = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    return JSON.parse(text);
+  }
+  return JSON.parse(el.textContent);
+}
+
+/* ---------- model ---------- */
+let M;
+function groupOf(sector, mediaSectors) {
+  if (mediaSectors.has(sector)) return "media";
+  if (sector === "University") return "uni";
+  if (sector === "Funder" || sector === "Civic") return "civic";
+  return "other";
+}
+function monthsSince(iso, now) { return iso ? (now - Date.parse(iso + "T12:00:00Z")) / (DAY * 30.44) : null; }
+
+function buildModel(G) {
+  const now = Date.now();
+  const media = new Set(G.mediaSectors || []);
+  const byId = new Map(G.nodes.map(n => [n.id, n]));
+  const staff = G.nodes.filter(n => n.kind === "staff").sort((a, b) => a.name.localeCompare(b.name));
+  const staffIds = new Set(staff.map(s => s.id));
+  const programs = G.nodes.filter(n => n.kind === "program");
+  const programOf = new Map(), programEvidence = new Map(), orgsOf = new Map(), peopleOf = new Map(), social = new Map();
+  const add = (map, k, v) => { if (!map.has(k)) map.set(k, new Set()); map.get(k).add(v); };
+  for (const e of G.edges) {
+    const s = byId.get(e.source), t = byId.get(e.target);
+    if (!s || !t) continue;
+    if (t.kind === "program" && s.kind !== "program") { add(programOf, s.id, t.id); programEvidence.set(s.id + "|" + t.name, e.relation); }
+    else if (s.kind === "program" && t.kind !== "program") { add(programOf, t.id, s.id); programEvidence.set(t.id + "|" + s.name, e.relation); }
+    if (/affiliation/i.test(e.relation)) {
+      const [p, o] = s.kind === "person" && t.kind === "organization" ? [s, t] : t.kind === "person" && s.kind === "organization" ? [t, s] : [];
+      if (p) { add(orgsOf, p.id, o.id); add(peopleOf, o.id, p.id); }
+    }
+    if (e.network !== "CRM" && staffIds.has(e.source) && !staffIds.has(e.target)) {
+      if (!social.has(e.target)) social.set(e.target, new Map());
+      const per = social.get(e.target);
+      if (!per.has(e.source)) per.set(e.source, {});
+      const rec = per.get(e.source);
+      rec[e.relation] = (rec[e.relation] || 0) + e.count;
+    }
+  }
+  const inherited = (orgId, program) => {
+    for (const pid of peopleOf.get(orgId) || []) {
+      const r = programEvidence.get(pid + "|" + program);
+      if (r) return "Inferred · through a linked contact (" + r + ")";
+    }
+    return "";
+  };
+  let entities = [];
+  for (const n of G.nodes) {
+    if (n.kind !== "person" && n.kind !== "organization") continue;
+    const soc = social.get(n.id) || new Map();
+    const engaged = [...soc].filter(([, rel]) => rel.connection || rel.mutual_follow).map(([id]) => id);
+    const holders = [...new Set([...(n.crmStaff || []), ...engaged])].filter(id => staffIds.has(id));
+    const followers = [...soc.keys()].filter(id => !holders.includes(id));
+    const progIds = [...(programOf.get(n.id) || [])];
+    const programList = n.programNames && n.programNames.length ? n.programNames : progIds.map(id => byId.get(id).name);
+    const raw = (n.crmWeight || 0) + 2 * (n.mutual || 0) + (n.weight || 0) + 0.5 * (n.projects || 0) + 2 * programList.length + 0.25 * (n.reach || 0);
+    // Wider than the builder's `working` flag on purpose: one two-way social tie counts in any sector (README, Matching and scores).
+    const active = n.working || n.crmCount > 0 || n.mutual > 0 || n.projects > 0;
+    entities.push({
+      id: n.id, node: n, kind: n.kind, name: n.name, companies: n.companies || [], sector: n.sector || "Other",
+      group: groupOf(n.sector, media), holders, followers, programIds: progIds, programList, raw, active,
+      programEvidence: programList.map(p => programEvidence.get(n.id + "|" + p) || inherited(n.id, p)),
+      last: n.lastContact || "", first: n.firstContact || "", months: monthsSince(n.lastContact, now),
+      unresolved: n.unresolved || "", crm: n.crm || "", crmRank: n.crm === "In CRM" ? 3 : n.crm === "Check CRM" ? 2 : n.crm === "CRM unavailable" ? 1 : 0,
+      search: (n.name + " " + (n.companies || []).join(" ")).toLowerCase(),
+    });
+  }
+  const raws = entities.filter(e => e.active && !e.unresolved).map(e => e.raw).sort((a, b) => a - b);
+  const cap = Math.log1p(raws[raws.length - 1] || 1);
+  for (const e of entities) {
+    e.strength = Math.max(e.raw > 0 ? 1 : 0, Math.min(100, Math.round(100 * Math.log1p(e.raw) / cap)));
+    e.tier = e.strength >= STRONG ? "Strong" : e.strength >= MEDIUM ? "Medium" : "Light";
+  }
+  const ent = new Map(entities.map(e => [e.id, e]));
+  // An organization also holds the ties its people hold (CRM notes or two-way social activity, never a follow).
+  for (const e of entities) if (e.kind === "organization") {
+    const own = new Set(e.holders);
+    for (const pid of peopleOf.get(e.id) || []) { const pe = ent.get(pid); if (pe && !pe.unresolved) for (const h of pe.holders) own.add(h); }
+    e.viaPeople = [...own].filter(h => !e.holders.includes(h));
+    e.holders = [...own];
+  }
+  for (const e of entities) e.next = nextStep(e);
+  const cleanup = entities.filter(e => e.unresolved);
+  entities = entities.filter(e => !e.unresolved);
+  const programMembers = new Map();
+  for (const e of [...entities, ...cleanup]) for (const p of e.programList) add(programMembers, p, e.id);
+  const hasDates = entities.some(e => e.last);
+  const collected = (G.coverage || []).map(c => /read (\d{4}-\d{2}-\d{2})/.exec(c)).find(Boolean);
+  return { G, byId, ent, entities, cleanup, staff, staffIds, programs, programMembers, orgsOf, peopleOf, social, hasDates,
+    snapshot: collected ? collected[1] : "" };
+}
+
+function nextStep(e) {
+  if (e.unresolved) return { key: "cleanup", short: `Fix CRM: ${e.unresolved.toLowerCase()}`, text: `${e.unresolved}. Hidden from the map and lists until the CRM record has a full name and organization, or is removed.` };
+  if (e.crm === "Not in CRM" && e.active) return { key: "crm", short: "Add to CRM", text: "This tie is not in the CRM. Add a record so the relationship is tracked." };
+  if (e.crm === "Check CRM" && e.strength >= MEDIUM) return { key: "crm", short: "Confirm CRM match", text: "A possible CRM record exists but the match is not certain. Confirm it or add a new record." };
+  if (e.months !== null && e.months >= 6 && e.strength >= MEDIUM) return { key: "reconnect", short: "Reconnect", text: `Last contact was ${Math.round(e.months)} months ago. Plan a check-in.` };
+  if (e.holders.length === 1 && e.strength >= MEDIUM) return { key: "single", short: "Add a second staffer", text: "Only one staffer holds this tie. Introduce a colleague so the relationship does not depend on one person." };
+  if (e.holders.length === 0 && (e.node.crmCount || 0) > 0 && e.strength >= MEDIUM) return { key: "noowner", short: "Name an owner", text: "The CRM logs activity but no staffer is named. Decide who at CCM owns this relationship." };
+  return null;
+}
+
+/* ---------- state ---------- */
+const DEFAULTS = { v: "network", q: "", lens: "", staff: "", program: "", sector: "", type: "", scope: "", sort: "strength", dir: "desc", sel: "" };
+let S = { ...DEFAULTS };
+let listLimit = 100;
+function readHash() {
+  const h = new URLSearchParams(location.hash.replace(/^#/, ""));
+  S = { ...DEFAULTS };
+  for (const k of Object.keys(DEFAULTS)) if (h.has("m." + k)) S[k] = h.get("m." + k);
+  if (!["network", "list"].includes(S.v)) S.v = "network";
+  if (!Object.hasOwn(SORTS, S.sort)) S.sort = DEFAULTS.sort;
+  if (!["asc", "desc"].includes(S.dir)) S.dir = DEFAULTS.dir;
+  if (!LENSES.some(l => l.id === S.lens)) S.lens = "";
+  if (!["", "all"].includes(S.scope)) S.scope = "";
+  if (!["", "person", "organization"].includes(S.type)) S.type = "";
+}
+function writeHash() {
+  const h = new URLSearchParams();
+  for (const [k, v] of Object.entries(S)) if (v !== DEFAULTS[k]) h.set("m." + k, v);
+  const s = h.toString();
+  history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
+}
+const FILTER_KEYS = ["q", "lens", "staff", "program", "sector", "type", "scope"];
+function set(patch, opts = {}) {
+  if (!("sel" in patch) && M && M.ent.has(S.sel) && FILTER_KEYS.some(k => k in patch && patch[k] !== S[k])) patch.sel = "";
+  Object.assign(S, patch);
+  if (!opts.keepLimit) listLimit = 100;
+  writeHash();
+  render(opts);
+}
+
+/* ---------- filtering ---------- */
+function lensTest(id) {
+  switch (id) {
+    case "strong": return e => e.tier === "Strong";
+    case "single": return e => e.holders.length === 1 && e.strength >= MEDIUM;
+    case "reconnect": return e => e.months !== null && e.months >= 6;
+    case "noowner": return e => e.holders.length === 0 && (e.node.crmCount || 0) > 0;
+    case "crm": return e => e.crm === "Not in CRM" && e.active;
+    default: return () => true;
+  }
+}
+function filtered(lensId) {
+  const q = S.q.trim().toLowerCase();
+  const lens = lensTest(lensId);
+  const cleanup = lensId === "cleanup";
+  const members = S.program ? M.programMembers.get(S.program) || new Set() : null;
+  const staffHits = q ? M.staff.filter(s => s.name.toLowerCase().includes(q)).map(s => s.id) : [];
+  const tied = (e, id) => e.holders.includes(id) || S.scope === "all" && e.followers.includes(id);
+  return (cleanup ? M.cleanup : M.entities).filter(e =>
+    (cleanup || S.scope === "all" || e.active) &&
+    (!S.type || e.kind === S.type) &&
+    (!S.sector || e.group === S.sector) &&
+    (!S.staff || tied(e, S.staff)) &&
+    (!members || members.has(e.id)) &&
+    (!q || e.search.includes(q) || staffHits.some(id => tied(e, id))) &&
+    lens(e));
+}
+function baseFilter(skipLens) {
+  return filtered(skipLens ? "" : S.lens);
+}
+function sorted(list) {
+  const f = SORTS[S.sort] || SORTS.strength;
+  const d = S.dir === "asc" ? 1 : -1;
+  return list.slice().sort((a, b) => d * f(a, b) || b.strength - a.strength || a.name.localeCompare(b.name));
+}
+
+/* ---------- controls ---------- */
+function fillControls() {
+  $("f-staff").innerHTML = `<option value="">All staff</option>` + M.staff.map(s => {
+    const n = M.entities.filter(e => e.active && e.holders.includes(s.id)).length;
+    return `<option value="${esc(s.id)}">${esc(s.name)} (${n})</option>`;
+  }).join("");
+  const progs = [...M.programMembers].map(([name, ids]) => ({ name, n: [...ids].filter(id => M.ent.get(id).active).length })).filter(x => x.n).sort((a, b) => a.name.localeCompare(b.name));
+  $("f-program").innerHTML = `<option value="">All programs</option>` + progs.map(({ name, n }) => `<option value="${esc(name)}">${esc(name)} (${n})</option>`).join("");
+  $("f-program").disabled = !progs.length;
+  $("f-sector").innerHTML = `<option value="">All sectors</option>` + GROUPS.map(g => `<option value="${g.id}">${esc(g.label)}</option>`).join("");
+  $("legend").innerHTML = `<div><i class="staff"></i>CCM staff</div>` + GROUPS.map(g => `<div><i style="background:${g.color}"></i>${esc(g.label)}</div>`).join("") + `<small>Bigger circle = stronger relationship. Lines link a staffer to the ties they hold.</small>`;
+  $("snapshot").textContent = `CRM activity and public social ties${M.snapshot ? " · data as of " + fmtDate(M.snapshot) : ""}`;
+}
+function syncControls() {
+  $("q").value !== S.q && ($("q").value = S.q);
+  for (const [id, key] of [["f-staff", "staff"], ["f-program", "program"], ["f-sector", "sector"], ["f-type", "type"], ["f-scope", "scope"]]) $(id).value = S[key];
+  for (const b of shadow.querySelectorAll(".tabs button")) b.setAttribute("aria-selected", String(b.dataset.view === S.v));
+  $("view-network").hidden = S.v !== "network";
+  $("view-list").hidden = S.v !== "list";
+  const pre = baseFilter(true);
+  $("lenses").innerHTML = LENSES.map(l => {
+    const n = l.id === "cleanup" ? filtered("cleanup").length : l.id ? pre.filter(lensTest(l.id)).length : pre.length;
+    return `<button class="chip" data-lens="${l.id}" aria-pressed="${S.lens === l.id}">${esc(l.label)}<b>${n.toLocaleString()}</b></button>`;
+  }).join("");
+  const active = ["staff", "program", "sector", "type", "scope"].filter(k => S[k]).length;
+  $("filter-toggle").querySelector("span").textContent = active ? `Filters (${active})` : "Filters";
+  app.classList.toggle("has-sel", !!S.sel);
+}
+
+/* ---------- list view ---------- */
+const COLS = [
+  { key: "name", label: "Name" },
+  { key: "strength", label: "Strength", num: true },
+  { key: "last", label: "Last contact", hideM: true },
+  { key: "holders", label: "Held by" },
+  { key: "programs", label: "Programs", hideM: true },
+  { key: "crm", label: "CRM", hideM: true },
+  { key: null, label: "Suggested next step", hideM: true },
+];
+function crmTag(e) {
+  if (e.crm === "CRM unavailable") return `<span class="tag">CRM not checked</span>`;
+  return e.crm === "In CRM" ? `<span class="tag ok">In CRM</span>` : e.crm === "Check CRM" ? `<span class="tag">Unconfirmed</span>` : `<span class="tag warn">Not in CRM</span>`;
+}
+function holderText(e, max = 3) {
+  if (!e.holders.length) return `<span class="note">None</span>`;
+  const names = e.holders.map(id => shortName(M.byId.get(id).name));
+  return esc(names.slice(0, max).join(", ")) + (names.length > max ? ` +${names.length - max}` : "");
+}
+function renderList(list) {
+  const view = $("view-list");
+  if (!list.length) { view.innerHTML = emptyState(); return; }
+  const rows = list.slice(0, listLimit).map(e => `<tr data-id="${esc(e.id)}" tabindex="0" aria-selected="${S.sel === e.id}">
+    <td><span class="nm"><span class="dot" style="background:${GROUP[e.group].color}" aria-hidden="true"></span>${esc(e.name)}</span>
+      <span class="sub">${esc(e.kind === "organization" ? "Organization" : e.companies[0] || "")}${e.kind === "organization" ? "" : ""} · ${esc(e.sector)}</span></td>
+    <td class="num"><span class="meter" title="${e.tier}"><span><i style="width:${e.strength}%"></i></span>${e.strength}</span></td>
+    <td class="hide-m" style="white-space:nowrap">${e.last ? esc(fmtDate(e.last)) : `<span class="note">${M.hasDates ? "None logged" : "Not available"}</span>`}</td>
+    <td>${holderText(e)}</td>
+    <td class="hide-m">${e.programList.length ? esc(e.programList.slice(0, 2).join(", ")) + (e.programList.length > 2 ? ` +${e.programList.length - 2}` : "") : `<span class="note">None</span>`}</td>
+    <td class="hide-m">${crmTag(e)}</td>
+    <td class="hide-m">${e.next ? `<span class="tag warn">${esc(e.next.short)}</span>` : ""}</td></tr>`).join("");
+  view.innerHTML = `<table><caption class="sr">People and organizations, ${list.length} shown, sorted by ${esc(S.sort)}</caption><thead><tr>${COLS.map(c =>
+    `<th${c.num ? ' class="num"' : ""}${c.hideM ? ' class="hide-m"' : ""}${c.key === S.sort ? ` aria-sort="${S.dir === "asc" ? "ascending" : "descending"}"` : ""}>${c.key ? `<button data-sort="${c.key}">${esc(c.label)}</button>` : `<span style="display:block;padding:10px">${esc(c.label)}</span>`}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>
+    ${list.length > listLimit ? `<button class="btn more" id="more">Show ${Math.min(100, list.length - listLimit)} more of ${(list.length - listLimit).toLocaleString()}</button>` : ""}`;
+}
+function emptyState() {
+  const lens = LENSES.find(l => l.id === S.lens);
+  let why = "No one matches these filters.";
+  if (S.lens === "reconnect" && !M.hasDates) why = "Last-contact dates are not in this data build yet, so this list cannot be computed.";
+  return `<div class="empty"><strong>${esc(lens && lens.id ? lens.label + ": nothing to show" : "Nothing to show")}</strong>${esc(why)}<br><button class="btn" data-reset>Reset all filters</button></div>`;
+}
+
+/* ---------- network view ---------- */
+const net = { nodes: [], links: [], k: 1, x: 0, y: 0, w: 0, h: 0, hover: null, alpha: 0, raf: 0, key: "" };
+const canvas = $("canvas"), ctx = canvas.getContext("2d");
+
+function buildNetwork(list) {
+  const limit = window.innerWidth < 760 ? 60 : net.w < 800 ? 100 : 140;
+  const top = list.filter(e => e.strength > 0).sort((a, b) => b.strength - a.strength || a.name.localeCompare(b.name)).slice(0, limit);
+  const pick = S.sel && !top.some(e => e.id === S.sel) ? list.filter(e => e.id === S.sel) : [];
+  const shown = [...top, ...pick];
+  const key = shown.map(e => e.id).join("|") + "/" + S.staff;
+  if (key === net.key) return;
+  net.key = key;
+  const old = new Map(net.nodes.map(n => [n.id, n]));
+  const anchors = groupAnchors();
+  const nodes = [], idx = new Map();
+  const staffUsed = new Set(shown.flatMap(e => e.holders));
+  if (S.staff) staffUsed.add(S.staff);
+  for (const s of M.staff) if (staffUsed.has(s.id)) {
+    const o = old.get(s.id);
+    const n = { id: s.id, staff: true, name: s.name, r: 13, x: o ? o.x : (Math.random() - .5) * 60, y: o ? o.y : (Math.random() - .5) * 60, vx: 0, vy: 0 };
+    idx.set(n.id, nodes.length); nodes.push(n);
+  }
+  for (const e of shown) {
+    const o = old.get(e.id), a = anchors[e.group];
+    const n = { id: e.id, e, name: e.name, group: e.group, r: 3.5 + 13 * Math.sqrt(e.strength / 100),
+      x: o ? o.x : a.x + (Math.random() - .5) * 120, y: o ? o.y : a.y + (Math.random() - .5) * 120, vx: 0, vy: 0 };
+    idx.set(n.id, nodes.length); nodes.push(n);
+  }
+  const links = [];
+  for (const e of shown) {
+    for (const h of e.holders) if (idx.has(h)) links.push({ s: nodes[idx.get(h)], t: nodes[idx.get(e.id)], staff: true });
+    for (const o of M.orgsOf.get(e.id) || []) if (idx.has(o)) links.push({ s: nodes[idx.get(e.id)], t: nodes[idx.get(o)], staff: false });
+  }
+  for (const n of nodes) n.deg = 0;
+  for (const l of links) { l.s.deg++; l.t.deg++; }
+  net.nodes = nodes; net.links = links; net.idx = idx;
+  net.alpha = 1;
+  net.userMoved = false;
+  if (!net.raf) net.raf = requestAnimationFrame(tick);
+}
+function groupAnchors() {
+  const R = 40 + 9 * Math.sqrt(net.nodes.length || 100);
+  const X = net.w && net.h ? Math.min(1.8, Math.max(0.8, net.w / net.h)) : 1.3;
+  return { media: { x: -R * X, y: -R * .3 }, uni: { x: R * X, y: -R * .35 }, civic: { x: R * X * .55, y: R * .8 }, other: { x: -R * X * .45, y: R * .8 } };
+}
+function step() {
+  const N = net.nodes, A = net.alpha, anchors = groupAnchors();
+  for (let i = 0; i < N.length; i++) {
+    const a = N[i];
+    for (let j = i + 1; j < N.length; j++) {
+      const b = N[j];
+      let dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy || 0.01;
+      const min = a.r + b.r + (a.staff || b.staff ? 10 : 3);
+      const d = Math.sqrt(d2);
+      let f = (a.staff && b.staff ? -6000 : -160) * A / d2;
+      if (d < min) f -= (min - d) * 0.5 / d;
+      dx *= f; dy *= f;
+      a.vx += dx * (b.staff ? 1.4 : 1) / (a.staff ? 4 : 1); a.vy += dy * (b.staff ? 1.4 : 1) / (a.staff ? 4 : 1);
+      b.vx -= dx * (a.staff ? 1.4 : 1) / (b.staff ? 4 : 1); b.vy -= dy * (a.staff ? 1.4 : 1) / (b.staff ? 4 : 1);
+    }
+  }
+  for (const l of net.links) {
+    const dx = l.t.x - l.s.x, dy = l.t.y - l.s.y, d = Math.sqrt(dx * dx + dy * dy) || 1;
+    const rest = l.staff ? 70 : 26, k = (l.staff ? 0.03 : 0.06) * A;
+    const f = (d - rest) * k / d;
+    const ws = l.s.staff ? 0.3 : 1, wt = l.t.staff ? 0.3 : 1;
+    l.s.vx += dx * f * ws; l.s.vy += dy * f * ws; l.t.vx -= dx * f * wt; l.t.vy -= dy * f * wt;
+  }
+  for (const n of N) {
+    if (n.staff) { n.vx -= n.x * 0.004 * A; n.vy -= n.y * 0.004 * A; }
+    else { const a = anchors[n.group]; n.vx += (a.x - n.x) * 0.012 * A; n.vy += (a.y - n.y) * 0.012 * A; }
+    if (n.fixed) { n.vx = n.vy = 0; continue; }
+    n.vx *= 0.6; n.vy *= 0.6; n.x += n.vx; n.y += n.vy;
+  }
+  net.alpha *= 0.985;
+}
+function tick() {
+  for (let i = 0; i < 3 && net.alpha > 0.02; i++) step();
+  if (!net.userMoved && (net.alpha < 0.35 || net.alpha <= 0.02)) fit();
+  draw();
+  net.raf = net.alpha > 0.02 ? requestAnimationFrame(tick) : 0;
+}
+function resizeCanvas() {
+  const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  if (!r.width) return;
+  net.w = r.width; net.h = r.height;
+  canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+function fit() {
+  if (!net.nodes.length) return;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of net.nodes) { x0 = Math.min(x0, n.x - n.r); y0 = Math.min(y0, n.y - n.r); x1 = Math.max(x1, n.x + n.r); y1 = Math.max(y1, n.y + n.r); }
+  const mobile = window.innerWidth < 760, padX = mobile ? 24 : 70;
+  const top = $("net-note").offsetHeight + 24, bottom = $("legend").offsetHeight + 24;
+  net.k = Math.min(3, Math.min((net.w - padX * 2) / (x1 - x0 || 1), (net.h - top - bottom) / (y1 - y0 || 1)));
+  net.x = net.w / 2 - net.k * (x0 + x1) / 2;
+  net.y = top + (net.h - top - bottom) / 2 - net.k * (y0 + y1) / 2;
+}
+const toScreen = n => [n.x * net.k + net.x, n.y * net.k + net.y];
+function focusSet() {
+  const id = S.sel && net.idx && net.idx.has(S.sel) ? S.sel : net.hover;
+  if (!id) return null;
+  const set = new Set([id]);
+  for (const l of net.links) { if (l.s.id === id) set.add(l.t.id); if (l.t.id === id) set.add(l.s.id); }
+  return set;
+}
+function draw() {
+  const W = net.w, H = net.h;
+  ctx.clearRect(0, 0, W, H);
+  if (!net.nodes.length) return;
+  const focus = focusSet();
+  for (const l of net.links) {
+    const on = focus && focus.has(l.s.id) && focus.has(l.t.id) && (l.s.id === (S.sel || net.hover) || l.t.id === (S.sel || net.hover));
+    ctx.strokeStyle = on ? "rgba(211,31,31,.85)" : focus ? "rgba(0,0,0,.04)" : l.staff ? "rgba(26,26,26,.16)" : "rgba(26,26,26,.1)";
+    ctx.lineWidth = on ? 1.6 : 1;
+    const [x1, y1] = toScreen(l.s), [x2, y2] = toScreen(l.t);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  const sel = S.sel;
+  for (const n of net.nodes) {
+    const [x, y] = toScreen(n), r = Math.max(n.staff ? 9 : 3, n.r * Math.min(window.innerWidth < 760 ? 1.15 : 1.6, Math.max(0.75, Math.sqrt(net.k))));
+    n.sx = x; n.sy = y; n.sr = r;
+    if (x < -40 || y < -40 || x > W + 40 || y > H + 40) continue;
+    ctx.globalAlpha = focus && !focus.has(n.id) ? 0.18 : 1;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = n.staff ? "#1a1a1a" : GROUP[n.group].hex;
+    ctx.fill();
+    ctx.lineWidth = n.staff ? 2.5 : 1.5; ctx.strokeStyle = "#fff"; ctx.stroke();
+    if (n.id === sel) { ctx.lineWidth = 3; ctx.strokeStyle = "#d31f1f"; ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke(); }
+    if (n.staff) {
+      ctx.fillStyle = "#fff"; ctx.font = `700 ${Math.round(r * 0.78)}px Roboto, Arial, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(n.name.split(" ").map(p => p[0]).join("").slice(0, 2), x, y + 0.5);
+    }
+  }
+  ctx.globalAlpha = 1;
+  drawLabels(focus);
+}
+function drawLabels(focus) {
+  const boxes = [];
+  const W = net.w, H = net.h;
+  const hit = b => boxes.some(o => b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y);
+  for (const n of net.nodes) boxes.push({ x: n.sx - n.sr, y: n.sy - n.sr, w: n.sr * 2, h: n.sr * 2, node: true, id: n.id });
+  const order = net.nodes.slice().sort((a, b) => {
+    const pa = (a.id === S.sel ? 4 : 0) + (focus && focus.has(a.id) ? 2 : 0) + (a.staff ? 1 : 0);
+    const pb = (b.id === S.sel ? 4 : 0) + (focus && focus.has(b.id) ? 2 : 0) + (b.staff ? 1 : 0);
+    return pb - pa || b.r - a.r;
+  });
+  const budget = Math.round((W * H) / 9000);
+  let placed = 0;
+  for (const n of order) {
+    const must = n.id === S.sel || n.staff || (focus && focus.has(n.id));
+    if (!must && (placed >= budget || focus)) continue;
+    if (n.sx < 0 || n.sy < 0 || n.sx > W || n.sy > H) continue;
+    const label = n.staff ? n.name : n.name.length > 28 ? n.name.slice(0, 27) + "…" : n.name;
+    const fs = n.staff ? 13 : n.id === S.sel ? 13.5 : 12;
+    ctx.font = `${n.staff || n.id === S.sel ? 700 : 400} ${fs}px Roboto, Arial, sans-serif`;
+    const tw = ctx.measureText(label).width;
+    const cands = [[n.sx + n.sr + 5, n.sy - fs / 2 - 1, "left"], [n.sx - n.sr - 5 - tw, n.sy - fs / 2 - 1, "left"], [n.sx - tw / 2, n.sy + n.sr + 3, "left"], [n.sx - tw / 2, n.sy - n.sr - fs - 4, "left"]];
+    let ok = null;
+    for (const [x, y] of cands) {
+      const b = { x: x - 2, y: y - 1, w: tw + 4, h: fs + 3 };
+      if (b.x < 2 || b.x + b.w > W - 2 || b.y < 2 || b.y + b.h > H - 2) continue;
+      if (!boxes.some(o => !(o.node && o.id === n.id) && b.x < o.x + o.w && b.x + b.w > o.x && b.y < o.y + o.h && b.y + b.h > o.y)) { ok = b; break; }
+    }
+    if (!ok && (n.id === S.sel || n.staff)) {
+      const [x, y] = cands.find(([x, y]) => x > 2 && x + tw < W - 2 && y > 2 && y + fs < H - 2) || cands[0];
+      ok = { x: x - 2, y: y - 1, w: tw + 4, h: fs + 3 };
+    }
+    if (!ok) continue;
+    boxes.push(ok); placed++;
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.lineWidth = 3.5; ctx.strokeStyle = "rgba(251,251,250,.95)"; ctx.lineJoin = "round";
+    ctx.strokeText(label, ok.x + 2, ok.y + 1.5);
+    ctx.fillStyle = n.staff ? "#1a1a1a" : "#2b2b2b";
+    ctx.fillText(label, ok.x + 2, ok.y + 1.5);
+  }
+  void hit;
+}
+function centerOn(id) {
+  const go = () => {
+    const n = net.idx && net.idx.has(id) && net.nodes[net.idx.get(id)];
+    if (!n) return;
+    const [x, y] = toScreen(n);
+    const ty = window.innerWidth < 760 ? net.h * 0.22 : net.h / 2, tx = net.w / 2;
+    net.userMoved = true;
+    if (window.innerWidth < 760 || x < 60 || x > net.w - 60 || y < 60 || y > net.h - 60) { net.x += tx - x; net.y += ty - y; draw(); }
+  };
+  if (net.alpha > 0.02) setTimeout(go, 1200); else go();
+}
+function nodeAt(px, py) {
+  let best = null, bd = Infinity;
+  for (const n of net.nodes) {
+    const d = Math.hypot(n.sx - px, n.sy - py);
+    if (d < Math.max(n.sr + 4, 10) && d < bd) { best = n; bd = d; }
+  }
+  return best;
+}
+function renderNetwork(list) {
+  const empty = $("net-empty");
+  canvas.hidden = !list.length;
+  if (!list.length) { empty.hidden = false; empty.innerHTML = emptyState(); net.nodes = []; net.key = ""; draw(); $("net-note").textContent = ""; return; }
+  empty.hidden = true;
+  buildNetwork(list);
+  const shown = net.nodes.filter(n => !n.staff).length;
+  $("net-note").textContent = shown < list.length ? (window.innerWidth < 760 ? `Strongest ${shown} of ${list.length.toLocaleString()} shown` : `Showing the ${shown} strongest of ${list.length.toLocaleString()}. Search or filter to see others, or use the List view.`) : `Showing all ${list.length.toLocaleString()}.`;
+  draw();
+}
+
+let drag = null;
+const pointers = new Map();
+canvas.addEventListener("pointerdown", ev => {
+  canvas.setPointerCapture(ev.pointerId);
+  pointers.set(ev.pointerId, { x: ev.offsetX, y: ev.offsetY });
+  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; drag = { pinch: Math.hypot(a.x - b.x, a.y - b.y), k: net.k, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, ox: net.x, oy: net.y }; return; }
+  drag = { x: ev.offsetX, y: ev.offsetY, ox: net.x, oy: net.y, moved: false };
+});
+canvas.addEventListener("pointermove", ev => {
+  if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, { x: ev.offsetX, y: ev.offsetY });
+  if (drag && drag.pinch && pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const k = Math.max(0.2, Math.min(6, drag.k * Math.hypot(a.x - b.x, a.y - b.y) / drag.pinch));
+    net.userMoved = true;
+    net.x = drag.cx - (drag.cx - drag.ox) * k / drag.k; net.y = drag.cy - (drag.cy - drag.oy) * k / drag.k; net.k = k;
+    draw(); return;
+  }
+  if (drag && !drag.pinch) {
+    const dx = ev.offsetX - drag.x, dy = ev.offsetY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    if (drag.moved) { net.userMoved = true; canvas.classList.add("dragging"); net.x = drag.ox + dx; net.y = drag.oy + dy; draw(); }
+    return;
+  }
+  const n = nodeAt(ev.offsetX, ev.offsetY);
+  const id = n ? n.id : null;
+  canvas.style.cursor = n ? "pointer" : "grab";
+  if (id !== net.hover) { net.hover = id; draw(); }
+  const tip = $("tip");
+  if (n && ev.pointerType === "mouse") {
+    tip.hidden = false;
+    tip.style.left = ev.offsetX + "px"; tip.style.top = ev.offsetY + "px";
+    tip.innerHTML = n.staff ? `<b>${esc(n.name)}</b>CCM staff · ${plural(n.deg, "tie")} shown` : `<b>${esc(n.name)}</b>${esc(n.e.kind === "organization" ? "Organization" : n.e.companies[0] || "")}<br>Strength ${n.e.strength} · ${esc(n.e.tier.toLowerCase())}${n.e.last ? " · last contact " + esc(fmtDate(n.e.last)) : ""}`;
+    if (ev.offsetX > net.w - 280) tip.style.transform = "translate(calc(-100% - 12px), 12px)"; else tip.style.transform = "";
+  } else tip.hidden = true;
+});
+const endDrag = ev => {
+  pointers.delete(ev.pointerId);
+  canvas.classList.remove("dragging");
+  if (drag && !drag.pinch && !drag.moved && ev.type === "pointerup") {
+    const n = nodeAt(ev.offsetX, ev.offsetY);
+    set({ sel: n ? n.id : "" }, { keepLimit: true });
+  }
+  if (pointers.size === 0) drag = null;
+};
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+canvas.addEventListener("pointerleave", () => { if (net.hover) { net.hover = null; draw(); } $("tip").hidden = true; });
+canvas.addEventListener("wheel", ev => {
+  ev.preventDefault();
+  zoomAt(ev.offsetX, ev.offsetY, Math.exp(-ev.deltaY * 0.0015));
+}, { passive: false });
+function zoomAt(x, y, f) {
+  net.userMoved = true;
+  const k = Math.max(0.2, Math.min(6, net.k * f));
+  net.x = x - (x - net.x) * k / net.k; net.y = y - (y - net.y) * k / net.k; net.k = k; draw();
+}
+canvas.addEventListener("keydown", ev => {
+  const m = { ArrowLeft: [40, 0], ArrowRight: [-40, 0], ArrowUp: [0, 40], ArrowDown: [0, -40] }[ev.key];
+  if (m) { net.x += m[0]; net.y += m[1]; draw(); ev.preventDefault(); }
+  if (ev.key === "+" || ev.key === "=") zoomAt(net.w / 2, net.h / 2, 1.25);
+  if (ev.key === "-") zoomAt(net.w / 2, net.h / 2, 0.8);
+  if (ev.key === "Escape") set({ sel: "" }, { keepLimit: true });
+});
+$("zin").onclick = () => zoomAt(net.w / 2, net.h / 2, 1.3);
+$("zout").onclick = () => zoomAt(net.w / 2, net.h / 2, 1 / 1.3);
+$("zfit").onclick = () => { fit(); draw(); };
+
+/* ---------- detail panel ---------- */
+function staffPanel(s, all) {
+  const ties = all.filter(e => e.holders.includes(s.id));
+  const alone = ties.filter(e => e.holders.length === 1 && e.strength >= MEDIUM);
+  const recon = ties.filter(e => e.months !== null && e.months >= 6);
+  const top = ties.slice().sort((a, b) => b.strength - a.strength).slice(0, 12);
+  return `<div class="kicker">CCM staff</div><h3>${esc(s.name)}</h3>${s.role ? `<div class="org">${esc(s.role)}</div>` : ""}
+    <div class="stats" style="margin-top:12px"><div class="stat"><b>${ties.length}</b><span>ties recorded</span></div><div class="stat"><b>${alone.length}</b><span>held only by ${esc(s.name.split(" ")[0])}</span></div><div class="stat"><b>${M.hasDates ? recon.length : "–"}</b><span>need a check-in</span></div></div>
+    ${S.staff === s.id ? "" : `<p style="margin-top:12px"><button class="btn" data-filter-staff="${esc(s.id)}">Show only ${esc(s.name.split(" ")[0])}'s ties</button></p>`}
+    ${alone.length ? `<section><h4>Ties only ${esc(s.name.split(" ")[0])} holds</h4><p class="note">Introduce a colleague to the strongest of these.</p><ul>${alone.slice(0, 8).map(itemRow).join("")}</ul></section>` : ""}
+    <section><h4>Strongest ties</h4>${top.length ? `<ul>${top.map(itemRow).join("")}</ul>` : `<p class="note">No ties recorded for this staffer in this data build. CRM notes rarely name a staffer, and public social data covers only staff with public accounts.</p>`}</section>`;
+}
+function itemRow(e) {
+  return `<li class="row"><button class="linkish" data-sel="${esc(e.id)}">${esc(e.name)}</button><small>${e.strength} · ${esc(e.tier.toLowerCase())}</small></li>`;
+}
+function entityPanel(e) {
+  const n = e.node;
+  const why = [];
+  if (n.crmCount) why.push(`${plural(n.crmCount, "CRM interaction")}${n.recent90 ? `, ${n.recent90} in the last 90 days` : ""}`);
+  if (n.projects) why.push(`${plural(n.projects, "Board item")} linked`);
+  const inferred = e.programEvidence.filter(r => r.startsWith("Inferred")).length;
+  if (e.programList.length) why.push(`Linked to ${plural(e.programList.length, "program")}${inferred ? ` (${inferred} inferred, not recorded)` : ""}`);
+  if (n.mutual) why.push(`${plural(n.mutual, "staffer")} follow${n.mutual === 1 ? "s" : ""} each other on social media`);
+  const soc = {};
+  for (const rel of (M.social.get(e.id) || new Map()).values()) for (const [r, c] of Object.entries(rel)) soc[r] = (soc[r] || 0) + c;
+  const socTxt = Object.entries(soc).filter(([r]) => r !== "follow" && r !== "mutual_follow" && r !== "affiliation").map(([r, c]) => `${c} ${r === "comment" ? "replies" : r + "s"}`);
+  if (socTxt.length) why.push(`Social activity with staff: ${socTxt.join(", ")}`);
+  if (!why.length) why.push("Found only through a one-way social follow");
+  const byType = n.byType && Object.keys(n.byType).length ? Object.entries(n.byType).sort((a, b) => b[1] - a[1]) : null;
+  const maxT = byType ? byType[0][1] : 1;
+  const related = e.kind === "organization" ? [...(M.peopleOf.get(e.id) || [])] : [...(M.orgsOf.get(e.id) || [])];
+  const relEnt = related.map(id => M.ent.get(id)).filter(r => r && !r.unresolved).sort((a, b) => b.strength - a.strength);
+  return `<div class="kicker"><span class="dot" style="background:${GROUP[e.group].color}"></span>${e.kind === "organization" ? "Organization" : "Person"} · ${esc(e.sector)}</div>
+    <h3>${esc(e.name)}</h3>${e.companies.length ? `<div class="org">${esc(e.companies.join("; "))}</div>` : ""}
+    <div>${crmTag(e)}<span class="tag">${esc(e.tier)} tie · ${e.strength}/100</span></div>
+    ${e.next ? `<div class="next"><b>Suggested next step: ${esc(e.next.short.toLowerCase())}</b>${esc(e.next.text)}</div>` : `<div class="next calm"><b>No action flagged</b>This relationship has an owner, a CRM record and recent activity, or it is too light to act on.</div>`}
+    <section><h4>Who at CCM holds this tie</h4>${e.holders.length ? `<ul>${e.holders.map(id => `<li class="row"><button class="linkish" data-sel="${esc(id)}">${esc(M.byId.get(id).name)}</button><small>${esc(holdBasis(e, id))}</small></li>`).join("")}</ul>` : `<p class="note">No staffer recorded. The CRM does not log who owns a contact, and no CRM note or two-way social tie names a staffer.</p>`}
+      ${e.followers.length ? `<p class="note" style="margin-top:6px">One-way social ties with ${esc(e.followers.map(id => M.byId.get(id).name).join(", "))}.</p>` : ""}</section>
+    <section><h4>Contact history</h4><div class="stats"><div class="stat"><b>${(n.crmCount || 0).toLocaleString()}</b><span>CRM interactions</span></div><div class="stat"><b>${n.recent90 ?? "–"}</b><span>last 90 days</span></div><div class="stat"><b style="font-size:15px">${e.last ? esc(fmtDate(e.last)) : "–"}</b><span>last contact</span></div></div>
+      ${byType ? `<div class="bars" style="margin-top:10px">${byType.map(([t, c]) => `<div><span>${esc(typeLabel(t))}</span><i style="width:${Math.max(2, 100 * c / maxT)}%"></i><span>${c}</span></div>`).join("")}</div>` : ""}
+      ${!M.hasDates ? `<p class="note" style="margin-top:8px">Dates and interaction types arrive with the next data build.</p>` : ""}</section>
+    <section><h4>Why this ranks here</h4><ul class="why">${why.map(w => `<li>${esc(w)}</li>`).join("")}</ul></section>
+    ${e.programList.length ? `<section><h4>Programs</h4><ul>${e.programList.map((p, i) => `<li class="row"><span>${esc(p)}</span>${e.programEvidence[i] ? `<small>${esc(e.programEvidence[i])}</small>` : ""}</li>`).join("")}</ul></section>` : ""}
+    ${n.projectNames && n.projectNames.length ? `<section><h4>Board items${n.projects > n.projectNames.length ? ` (${n.projects}, recent shown)` : ""}</h4><ul>${n.projectNames.map(p => `<li>${esc(p)}</li>`).join("")}</ul></section>` : ""}
+    ${relEnt.length ? `<section><h4>${e.kind === "organization" ? "People here" : "Organizations"}</h4><ul>${relEnt.slice(0, 10).map(itemRow).join("")}</ul></section>` : ""}`;
+}
+const REL_LABEL = { connection: "connected on LinkedIn", mutual_follow: "follow each other", reaction: "reactions", repost: "reposts", comment: "replies" };
+function holdBasis(e, staffId) {
+  const out = [];
+  if ((e.node.crmStaff || []).includes(staffId)) out.push("named in CRM notes");
+  const rel = (M.social.get(e.id) || new Map()).get(staffId) || {};
+  const parts = Object.keys(rel).filter(r => REL_LABEL[r]).map(r => REL_LABEL[r]);
+  if (parts.length) out.push(parts.join(", ") + " on social");
+  if ((e.viaPeople || []).includes(staffId)) out.push("holds a tie with someone who works here");
+  return out.join("; ");
+}
+function overviewPanel(list) {
+  const counts = Object.fromEntries(LENSES.filter(l => l.id).map(l => [l.id, list.filter(lensTest(l.id)).length]));
+  counts.cleanup = M.cleanup.length;
+  const top = sorted(list).slice(0, 8);
+  const card = (id, text) => counts[id] ? `<li class="row"><button class="linkish" data-lens="${id}">${esc(text)}</button><small>${counts[id]}</small></li>` : "";
+  return `<div class="kicker">Overview</div><h3>${plural(list.length, "relationship")}</h3>
+    <p class="org">Pick a person, organization or staffer in the map or list to see who holds the tie, the contact history and a suggested next step.</p>
+    <section><h4>Planning lists</h4><ul>
+      ${card("single", "Strong ties held by one staffer")}
+      ${card("noowner", "Active ties with no staff owner")}
+      ${card("crm", "Ties missing from the CRM")}
+      ${M.hasDates ? card("reconnect", "No contact in 6+ months") : ""}
+      ${card("cleanup", "Records that need cleanup in CRM")}
+    </ul>${!M.hasDates ? `<p class="note">The "no contact in 6+ months" list needs last-contact dates, which arrive with the next data build.</p>` : ""}</section>
+    <section><h4>Strongest relationships</h4><ul>${top.map(itemRow).join("")}</ul></section>
+    <section><h4>Data sources</h4><ul>${sourceLines().map(l => `<li class="note">${esc(l)}</li>`).join("")}</ul><p style="margin-top:6px"><button class="linkish" data-about>How strength and ties are measured</button></p></section>
+    <section><h4>Staff</h4><ul>${M.staff.map(s => ({ s, n: list.filter(e => e.holders.includes(s.id)).length })).sort((a, b) => b.n - a.n).map(({ s, n }) =>
+      `<li class="row"><button class="linkish" data-sel="${esc(s.id)}">${esc(s.name)}</button><small>${plural(n, "tie")}</small></li>`).join("")}</ul></section>`;
+}
+const NOTICE = /\b(failed|unavailable|skipped|capped|stopped|limits?)\b/i;
+function sourceLines() {
+  const cov = M.G.coverage || [];
+  const notices = cov.filter(c => NOTICE.test(c)).length;
+  const li = cov.map(c => /LinkedIn exports received: (\d+) of (\d+)/.exec(c)).find(Boolean);
+  const crm = cov.find(c => /^CRM snapshot:/.test(c));
+  const out = [];
+  if (crm) out.push(crm.replace(/, read .*$/, "."));
+  out.push(li && +li[1] > 0 ? `LinkedIn connections uploaded by ${li[1]} of ${li[2]} staff.` : "LinkedIn: no connections uploaded yet. Staff exports will add this layer.");
+  const bs = cov.find(c => /^Bluesky mutual:/.test(c));
+  if (bs) out.push(bs.replace(/^Bluesky mutual: verified/, "Bluesky:"));
+  if (notices) out.push(`${plural(notices, "collection notice")} about failed or limited reads. See Data coverage under How strength and ties are measured.`);
+  return out;
+}
+function renderPanel(list) {
+  const el = $("panel-inner");
+  const close = `<button class="btn close" data-sel="" aria-label="Close details">Close</button>`;
+  if (S.sel && M.staffIds.has(S.sel)) el.innerHTML = close + staffPanel(M.byId.get(S.sel), M.entities.filter(e => e.active));
+  else if (S.sel && M.ent.has(S.sel)) el.innerHTML = close + entityPanel(M.ent.get(S.sel));
+  else el.innerHTML = overviewPanel(list);
+  $("panel").scrollTop = 0;
+}
+
+/* ---------- about ---------- */
+function renderAbout() {
+  const cov = (M.G.coverage || []).filter(c => NOTICE.test(c) || !/^.+ · (Bluesky|X|LinkedIn|Threads):/.test(c));
+  $("about-dlg").innerHTML = `<h3 id="about-h">About this map</h3>
+    <p>The map combines the CCM CRM (contacts, logged interactions, Board items and programs) with public social media ties of CCM staff. It is for internal planning. Do not share it outside CCM.</p>
+    <ul>
+      <li><b>Strength</b> (0 to 100) adds up recent CRM interactions (newer counts more), Board items, programs and social ties, on a log scale. Strong is 55 and up; medium is 25 to 54.</li>
+      <li><b>Held by</b> lists staff named in CRM notes about the person or who have a two-way social tie (a LinkedIn connection or a mutual follow). Likes, reposts and replies count toward strength but do not make a staffer a holder. The CRM has no owner field, so many ties show no staffer.</li>
+      <li><b>Working relationships</b> are people and organizations with CRM activity, a Board link or a two-way social tie. "Also one-way social ties" adds accounts linked to staff only by a follow, a like, a repost or a reply.</li>
+      <li><b>Not in CRM</b> means no exact CRM name match. <b>Unconfirmed</b> means a possible match that needs a check.</li>
+      <li><b>Needs cleanup in CRM</b> lists agent or bot accounts, test records and CRM contacts with a first name only. They stay off the map and lists until someone fixes or removes the CRM record.</li>
+    </ul>
+    <h4 style="margin:0 0 4px;font-size:14px">Data coverage</h4><ul>${cov.map(c => `<li>${esc(c)}</li>`).join("")}</ul>
+    <form method="dialog"><button class="btn">Close</button></form>`;
+}
+
+/* ---------- render ---------- */
+function render(opts = {}) {
+  if (!M) return;
+  syncControls();
+  const list = sorted(baseFilter(false));
+  M.current = list;
+  if (S.v === "list") renderList(list);
+  else { if (!net.w) resizeCanvas(); renderNetwork(list); if (opts.center) centerOn(S.sel); }
+  if (!opts.keepPanel) renderPanel(baseFilter(false));
+}
+
+/* ---------- events ---------- */
+let qTimer;
+$("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(() => set({ q: $("q").value }), 160); });
+for (const [id, key] of [["f-staff", "staff"], ["f-program", "program"], ["f-sector", "sector"], ["f-type", "type"], ["f-scope", "scope"]])
+  $(id).addEventListener("change", ev => set({ [key]: ev.target.value }));
+$("reset").onclick = () => set({ ...DEFAULTS, v: S.v });
+$("filter-toggle").onclick = () => { const f = $("filters"); f.classList.toggle("open"); $("filter-toggle").setAttribute("aria-expanded", String(f.classList.contains("open"))); };
+shadow.querySelector(".tabs").addEventListener("click", ev => { const b = ev.target.closest("button[data-view]"); if (b) set({ v: b.dataset.view }, { keepLimit: true }); });
+shadow.querySelector(".tabs").addEventListener("keydown", ev => { if (ev.key === "ArrowRight" || ev.key === "ArrowLeft") { const v = S.v === "network" ? "list" : "network"; set({ v }); $("tab-" + v).focus(); } });
+app.addEventListener("click", ev => {
+  const t = ev.target.closest("[data-lens],[data-sel],[data-sort],[data-reset],[data-filter-staff],[data-about],#more");
+  if (!t) return;
+  if (t.hasAttribute("data-about")) return $("about-dlg").showModal();
+  if (t.id === "more") { listLimit += 100; renderList(M.current); return; }
+  if (t.hasAttribute("data-reset")) return set({ ...DEFAULTS, v: S.v });
+  if (t.dataset.filterStaff) return set({ staff: t.dataset.filterStaff });
+  if (t.hasAttribute("data-lens")) return set({ lens: S.lens === t.dataset.lens && t.closest(".lenses") ? "" : t.dataset.lens });
+  if (t.hasAttribute("data-sort")) { const k = t.dataset.sort; return set({ sort: k, dir: S.sort === k ? (S.dir === "asc" ? "desc" : "asc") : k === "name" ? "asc" : "desc" }); }
+  if (t.hasAttribute("data-sel")) return set({ sel: t.dataset.sel }, { keepLimit: true, center: true });
+});
+$("view-list").addEventListener("click", ev => { const tr = ev.target.closest("tr[data-id]"); if (tr) set({ sel: tr.dataset.id }, { keepLimit: true }); });
+$("view-list").addEventListener("keydown", ev => { const tr = ev.target.closest("tr[data-id]"); if (tr && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); set({ sel: tr.dataset.id }, { keepLimit: true }); shadow.querySelector(`tr[data-id="${CSS_ESC(tr.dataset.id)}"]`)?.focus(); } });
+const CSS_ESC = s => (window.CSS && window.CSS.escape ? window.CSS.escape(s) : s);
+$("copy").onclick = async () => {
+  writeHash();
+  try { await navigator.clipboard.writeText(location.href); toast("Link copied. It opens this exact view."); }
+  catch { window.prompt("Copy this link", location.href); }
+};
+$("csv").onclick = () => {
+  const cell = v => { let s = String(v ?? ""); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const head = ["Name", "Type", "Organization", "Sector", "Strength", "Tier", "Last contact", "CRM interactions", "Last 90 days", "Held by", "Programs", "Board items", "CRM status", "Suggested next step"];
+  const rows = M.current.map(e => [e.name, e.kind, e.companies.join("; "), e.sector, e.strength, e.tier, e.last, e.node.crmCount || 0, e.node.recent90 ?? "",
+    e.holders.map(id => M.byId.get(id).name).join("; "), e.programList.join("; "), e.node.projects || 0, e.crm || "Not in CRM", e.next ? e.next.short : ""]);
+  const blob = new Blob(["﻿" + [head, ...rows].map(r => r.map(cell).join(",")).join("\r\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `ccm-relationships-${new Date().toISOString().slice(0, 10)}.csv`;
+  shadow.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(`Downloaded ${plural(rows.length, "row")}.`);
+};
+$("about").onclick = () => $("about-dlg").showModal();
+let toastTimer;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 2600); }
+window.addEventListener("hashchange", () => { readHash(); render(); });
+new ResizeObserver(() => { const w = net.w; resizeCanvas(); if (S.v === "network" && Math.abs(w - net.w) > 120) { net.key = ""; render({ keepPanel: true }); } }).observe($("view-network"));
+
+/* ---------- start ---------- */
+$("panel-inner").innerHTML = `<p class="note">Loading relationships…</p>`;
+loadGraph().then(G => {
+  M = buildModel(G);
+  fillControls();
+  renderAbout();
+  readHash();
+  render();
+}).catch(err => {
+  $("main").innerHTML = `<div class="empty" style="grid-column:1/-1"><strong>The map could not load.</strong>${esc(err.message)}</div>`;
+});
+})();
+</script>
+<!--ccmnet:end-->
+</html>

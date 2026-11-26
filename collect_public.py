@@ -112,8 +112,6 @@ def bsky_rows(person, handle, cutoff, api=bsky_api):
 
 def bluesky(staff, folder):
     cutoff = datetime.now(timezone.utc) - timedelta(days=WINDOW)
-    path = folder / "observations" / "bluesky.json"
-    previous = json.loads(path.read_text()) if path.is_file() else {"observations": [], "staff_accounts": {}}
     coverage = []
     rows = []
     known = {}
@@ -125,20 +123,15 @@ def bluesky(staff, folder):
         try:
             did, observations, posts, caps = bsky_rows(person, handle, cutoff)
         except (HTTPError, URLError, TimeoutError, KeyError, ValueError) as exc:
-            kept = [row for row in previous["observations"] if row["staff"] == person["id"]]
-            rows.extend(kept)
-            if person["id"] in previous["staff_accounts"]:
-                known[person["id"]] = previous["staff_accounts"][person["id"]]
-            coverage.append(f"{person['name']} · Bluesky: read failed ({type(exc).__name__}). "
-                            f"Kept {len(kept)} observations from the previous collection.")
+            coverage.append(f"{person['name']} · Bluesky: read failed ({type(exc).__name__}).")
             continue
         known[person["id"]] = did
         rows.extend(asdict(row) for row in observations)
         note = f" Coverage limits: {', '.join(caps)}." if caps else ""
         coverage.append(f"{person['name']} · Bluesky: {posts} public authored posts in the last {WINDOW} days "
                         f"and {sum(row.relation == 'follow' for row in observations)} outgoing follows.{note}")
-    put(path, {"observations": rows, "coverage": coverage, "staff_accounts": known})
-    print(f"Bluesky: {len(known)} accounts, {len(rows)} observations.")
+    put(folder / "observations" / "bluesky.json", {"observations": rows, "coverage": coverage, "staff_accounts": known})
+    print(f"Bluesky: {len(known)} accounts read, {len(rows)} observations.")
 
 
 def bluesky_mutual(folder):

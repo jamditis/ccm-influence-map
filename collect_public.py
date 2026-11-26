@@ -146,6 +146,7 @@ def bluesky_mutual(folder):
     source = json.loads(path.read_text())
     known = source["staff_accounts"]
     result = set()
+    incomplete = set()
     coverage = []
     prior_rows = [Observation(**row) for row in source["observations"]]
     for staff_id, did in known.items():
@@ -160,13 +161,18 @@ def bluesky_mutual(folder):
                     break
                 params["cursor"] = page["cursor"]
             else:
+                incomplete.add(staff_id)
                 coverage.append(f"Bluesky follower pages capped for {staff_id}.")
         except (HTTPError, URLError, TimeoutError, KeyError, ValueError) as exc:
+            incomplete.add(staff_id)
             coverage.append(f"Bluesky mutual follow check failed for {staff_id} ({type(exc).__name__}).")
         result.update((staff_id, account) for account in mutual)
     for row in source["observations"]:
         if row["relation"] in ("follow", "mutual_follow"):
-            row["relation"] = "mutual_follow" if (row["staff"], row["account"]) in result else "follow"
+            if (row["staff"], row["account"]) in result:
+                row["relation"] = "mutual_follow"
+            elif row["staff"] not in incomplete:
+                row["relation"] = "follow"
     source["coverage"] = [line for line in source["coverage"] if not line.startswith("Bluesky mutual:")] + [
         f"Bluesky mutual: verified {len(result)} reciprocal follows across {len(known)} public staff accounts.",
         *(f"Bluesky mutual: {line}" for line in coverage),

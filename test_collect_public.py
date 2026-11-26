@@ -19,6 +19,8 @@ class CollectorTests(unittest.TestCase):
             path.write_text(json.dumps({"observations": [kept], "coverage": [], "staff_accounts": {"s1": "did:one"}}))
             with mock.patch.object(collect_public, "bsky_rows", side_effect=URLError("offline")):
                 collect_public.bluesky(staff, Path(folder))
+            with mock.patch.object(collect_public, "bsky_api", side_effect=URLError("offline")):
+                collect_public.bluesky_mutual(Path(folder))
             saved = json.loads(path.read_text())
         self.assertEqual((saved["observations"], saved["staff_accounts"]), ([kept], {"s1": "did:one"}))
         self.assertIn("Kept 1 observations", saved["coverage"][0])

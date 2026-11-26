@@ -56,6 +56,47 @@ class NetworkMapTests(unittest.TestCase):
                                                "person", "follow", "")], crm, [])
         self.assertTrue(any(node["kind"] == "person" and node["crm"] == "Check CRM" for node in graph["nodes"]))
 
+    def test_repeated_staff_account_is_corroboration(self):
+        staff = [{"id": "s1", "name": "Staff One", "accounts": ["did:one", "did:one"]}]
+        build_graph(staff, [], None, [])
+        staff.append({"id": "s2", "name": "Staff Two", "accounts": ["did:one"]})
+        with self.assertRaisesRegex(ValueError, "Duplicate staff account"):
+            build_graph(staff, [], None, [])
+
+    def test_organization_account_identity(self):
+        staff = [{"id": "s1", "name": "Staff One"}]
+        def org(name, account):
+            return Observation("s1", "Bluesky", name, "", account, "organization", "follow", "")
+        renamed = build_graph(staff, [org("Example Press", "did:press"), org("Example Press NJ", "did:press")], None, [])
+        self.assertEqual(sum(node["kind"] == "organization" for node in renamed["nodes"]), 1)
+        same_name = build_graph(staff, [org("Example Press", "did:a"), org("Example Press", "did:b")], None, [])
+        self.assertEqual(sum(node["kind"] == "organization" for node in same_name["nodes"]), 2)
+        worker = Observation("s1", "LinkedIn", "Ari Example", "Example Press", "linkedin:ari", "person", "connection", "")
+        joined = build_graph(staff, [org("Example Press", "did:press"), worker], None, [])
+        orgs = [node for node in joined["nodes"] if node["kind"] == "organization"]
+        self.assertEqual((len(orgs), orgs[0]["reach"]), (1, 1))
+
+    def test_cleanup_records_do_not_feed_organizations(self):
+        staff = [{"id": "s1", "name": "Staff One"}, {"id": "s2", "name": "Staff Two"}]
+        crm = {"nodes": [
+            {"id": "1", "type": "contact", "name": "Test Contact", "organization": "Example Press"},
+            {"id": "2", "type": "organization", "name": "Example Press"},
+            {"id": "3", "type": "organization", "name": "Test Newsroom"},
+        ], "links": [{"source": "1", "target": "2", "relation": "CRM affiliation"}],
+            "interactions": {"1": {"count": 4, "weight": 2.0, "staff": {"s1": 4}}}}
+        follow = Observation("s2", "Bluesky", "Test Follower", "Example Press", "did:test", "person", "follow", "")
+        tie = Observation("s1", "Bluesky", "Test Newsroom", "", "did:newsroom", "organization", "mutual_follow", "")
+        graph = build_graph(staff, [follow, tie], crm, [])
+        press = next(node for node in graph["nodes"] if node["name"] == "Example Press")
+        self.assertEqual((press["crmCount"], press["crmStaff"], press["reach"], press["staff"]), (0, [], 0, []))
+        self.assertEqual(graph["affiliations"], [])
+        contact = next(node for node in graph["nodes"] if node["name"] == "Test Contact")
+        self.assertEqual(contact["crmCount"], 4)
+        with TemporaryDirectory() as folder:
+            write_outputs(graph, Path(folder), data_only=True)
+            summary = (Path(folder) / f"{TITLE} summary.md").read_text(encoding="utf-8")
+        self.assertNotIn("Test Newsroom", summary)
+
     def test_literals_in_html_and_csv(self):
         name = '=2+2 </script><script>alert("test")</script>'
         graph = build_graph([{"id": "s1", "name": "Staff One"}], [

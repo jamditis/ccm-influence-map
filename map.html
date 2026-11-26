@@ -424,7 +424,9 @@ function writeHash() {
   const s = h.toString();
   history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
 }
+const FILTER_KEYS = ["q", "lens", "staff", "program", "sector", "type", "scope"];
 function set(patch, opts = {}) {
+  if (!("sel" in patch) && M && M.ent.has(S.sel) && FILTER_KEYS.some(k => k in patch && patch[k] !== S[k])) patch.sel = "";
   Object.assign(S, patch);
   if (!opts.keepLimit) listLimit = 100;
   writeHash();
@@ -447,13 +449,15 @@ function filtered(lensId) {
   const lens = lensTest(lensId);
   const cleanup = lensId === "cleanup";
   const members = S.program ? M.programMembers.get(S.program) || new Set() : null;
+  const staffHits = q ? M.staff.filter(s => s.name.toLowerCase().includes(q)).map(s => s.id) : [];
+  const tied = (e, id) => e.holders.includes(id) || S.scope === "all" && e.followers.includes(id);
   return (cleanup ? M.cleanup : M.entities).filter(e =>
     (cleanup || S.scope === "all" || e.active) &&
     (!S.type || e.kind === S.type) &&
     (!S.sector || e.group === S.sector) &&
-    (!S.staff || e.holders.includes(S.staff)) &&
+    (!S.staff || tied(e, S.staff)) &&
     (!members || members.has(e.id)) &&
-    (!q || e.search.includes(q)) &&
+    (!q || e.search.includes(q) || staffHits.some(id => tied(e, id))) &&
     lens(e));
 }
 function baseFilter(skipLens) {
@@ -542,8 +546,7 @@ const canvas = $("canvas"), ctx = canvas.getContext("2d");
 
 function buildNetwork(list) {
   const limit = window.innerWidth < 760 ? 60 : net.w < 800 ? 100 : 140;
-  const top = sorted(list.filter(e => e.strength > 0)).slice(0, limit);
-  if (S.sort !== "strength" || S.dir !== "desc") top.sort((a, b) => b.strength - a.strength);
+  const top = list.filter(e => e.strength > 0).sort((a, b) => b.strength - a.strength || a.name.localeCompare(b.name)).slice(0, limit);
   const pick = S.sel && !top.some(e => e.id === S.sel) ? list.filter(e => e.id === S.sel) : [];
   const shown = [...top, ...pick];
   const key = shown.map(e => e.id).join("|") + "/" + S.staff;
@@ -889,8 +892,10 @@ function overviewPanel(list) {
     <section><h4>Staff</h4><ul>${M.staff.map(s => ({ s, n: list.filter(e => e.holders.includes(s.id)).length })).sort((a, b) => b.n - a.n).map(({ s, n }) =>
       `<li class="row"><button class="linkish" data-sel="${esc(s.id)}">${esc(s.name)}</button><small>${plural(n, "tie")}</small></li>`).join("")}</ul></section>`;
 }
+const NOTICE = /\b(failed|unavailable|skipped|capped|stopped|limits?)\b/i;
 function sourceLines() {
   const cov = M.G.coverage || [];
+  const notices = cov.filter(c => NOTICE.test(c)).length;
   const li = cov.map(c => /LinkedIn exports received: (\d+) of (\d+)/.exec(c)).find(Boolean);
   const crm = cov.find(c => /^CRM snapshot:/.test(c));
   const out = [];
@@ -898,6 +903,7 @@ function sourceLines() {
   out.push(li && +li[1] > 0 ? `LinkedIn connections uploaded by ${li[1]} of ${li[2]} staff.` : "LinkedIn: no connections uploaded yet. Staff exports will add this layer.");
   const bs = cov.find(c => /^Bluesky mutual:/.test(c));
   if (bs) out.push(bs.replace(/^Bluesky mutual: verified/, "Bluesky:"));
+  if (notices) out.push(`${plural(notices, "collection notice")} about failed or limited reads. See Data coverage under How strength and ties are measured.`);
   return out;
 }
 function renderPanel(list) {
@@ -911,7 +917,7 @@ function renderPanel(list) {
 
 /* ---------- about ---------- */
 function renderAbout() {
-  const cov = (M.G.coverage || []).filter(c => !/^.+ · (Bluesky|X|LinkedIn|Threads):/.test(c));
+  const cov = (M.G.coverage || []).filter(c => NOTICE.test(c) || !/^.+ · (Bluesky|X|LinkedIn|Threads):/.test(c));
   $("about-dlg").innerHTML = `<h3 id="about-h">About this map</h3>
     <p>The map combines the CCM CRM (contacts, logged interactions, Board items and programs) with public social media ties of CCM staff. It is for internal planning. Do not share it outside CCM.</p>
     <ul>
@@ -953,7 +959,7 @@ app.addEventListener("click", ev => {
   if (t.hasAttribute("data-reset")) return set({ ...DEFAULTS, v: S.v });
   if (t.dataset.filterStaff) return set({ staff: t.dataset.filterStaff });
   if (t.hasAttribute("data-lens")) return set({ lens: S.lens === t.dataset.lens && t.closest(".lenses") ? "" : t.dataset.lens });
-  if (t.hasAttribute("data-sort")) { const k = t.dataset.sort; return set({ sort: k, dir: S.sort === k && S.dir === "desc" ? "asc" : k === "name" ? "asc" : "desc" }); }
+  if (t.hasAttribute("data-sort")) { const k = t.dataset.sort; return set({ sort: k, dir: S.sort === k ? (S.dir === "asc" ? "desc" : "asc") : k === "name" ? "asc" : "desc" }); }
   if (t.hasAttribute("data-sel")) return set({ sel: t.dataset.sel }, { keepLimit: true, center: true });
 });
 $("view-list").addEventListener("click", ev => { const tr = ev.target.closest("tr[data-id]"); if (tr) set({ sel: tr.dataset.id }, { keepLimit: true }); });

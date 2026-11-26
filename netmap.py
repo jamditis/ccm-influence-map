@@ -262,7 +262,8 @@ def attach_crm(crm, nodes, match_nodes, staff, internal_names, edge):
                 raise ValueError("CRM interaction refers to an unknown staff ID")
             edge(staff_id, person, "CRM", "Staff named in CRM interactions", count,
                  metrics.get("staff_last", {}).get(staff_id, ""), metrics.get("staff_weight", {}).get(staff_id))
-        for node_id in {person, *membership[person]}:
+        flagged = unresolved.reason(nodes[person])
+        for node_id in {person} if flagged else {person, *membership[person]}:
             record = crm_metrics[node_id]
             record["count"] += metrics["count"]
             record["weight"] += metrics["weight"]
@@ -274,6 +275,8 @@ def attach_crm(crm, nodes, match_nodes, staff, internal_names, edge):
             record["last_contact"] = max(record["last_contact"], metrics.get("last_contact", ""))
             touch[node_id].update(metrics["staff"])
     for contact, organizations in membership.items():
+        if unresolved.reason(nodes[contact]):
+            continue
         for org in organizations:
             program_links[org].update(program_links[contact])
             project_links[org].update(project_links[contact])
@@ -323,7 +326,7 @@ def build_graph(staff, rows, crm, coverage, config=None):
                 raise ValueError("Duplicate staff name or alias")
             staff_by_name[name] = node_id
         for account in person.get("accounts", []):
-            if account in staff_by_account:
+            if staff_by_account.get(account, node_id) != node_id:
                 raise ValueError("Duplicate staff account")
             staff_by_account[account] = node_id
 
@@ -336,12 +339,28 @@ def build_graph(staff, rows, crm, coverage, config=None):
             central[source].add(target)
             central[target].add(source)
 
-    def organization(name):
-        org = key_for("organization", normalize(name))
+    ids = list(identities(rows))
+    org_ids_by_name = defaultdict(set)
+    for node_id, row in zip(ids, rows):
+        if row.kind == "organization" and row.account:
+            org_ids_by_name[normalize(row.name)].add(node_id)
+
+    def credit(member, staff_id, relation):
+        staff_links[member].add(staff_id)
+        if relation in SOCIAL_TIES:
+            reach[member].add(staff_id)
+        if relation in MUTUAL:
+            mutual[member].add(staff_id)
+        activity[member] += WEIGHTS.get(relation, 0)
+
+    def organization(name, node_id=None):
+        named = org_ids_by_name[normalize(name)]
+        org = node_id or (next(iter(named)) if len(named) == 1 else key_for("organization", normalize(name)))
         nodes.setdefault(org, {"id": org, "kind": "organization", "name": name, "companies": set()})
         return org
 
-    for node_id, row in zip(identities(rows), rows):
+    org_ties = []
+    for node_id, row in zip(ids, rows):
         if row.staff not in staff_ids or row.network not in NETWORKS[:-1] or row.relation not in RELATIONSHIPS:
             raise ValueError("Observation has an unknown staff ID, network or relationship")
         if row.kind not in ("person", "organization") or not row.name.strip() or (
@@ -354,7 +373,7 @@ def build_graph(staff, rows, crm, coverage, config=None):
         if row.kind == "person" and not row.account and normalize(row.company) in internal_names:
             target = staff_by_name.get(normalize(row.name), target)
         if row.kind == "organization":
-            target = organization(row.name)
+            target = organization(row.name, node_id if row.account else None)
         if target == row.staff:
             continue
         node = nodes.setdefault(target, {"id": target, "kind": row.kind, "name": row.name, "companies": set()})
@@ -366,21 +385,16 @@ def build_graph(staff, rows, crm, coverage, config=None):
                 affiliation = target, org, row.network, "affiliation"
                 if affiliation not in edges:
                     edge(*affiliation)
-                affiliation_evidence.add((row.staff, org, row.network))
+                org_ties.append((target, org, row.staff, row.network, None))
 
         occurrence = row.staff, target, row.network, row.relation, row.event
         if occurrence in seen:
             continue
         seen.add(occurrence)
         edge(*occurrence[:4])
-        related = [target, org] if org else [target]
-        for member in related:
-            staff_links[member].add(row.staff)
-            if row.relation in SOCIAL_TIES:
-                reach[member].add(row.staff)
-            if row.relation in MUTUAL:
-                mutual[member].add(row.staff)
-            activity[member] += WEIGHTS.get(row.relation, 0)
+        credit(target, row.staff, row.relation)
+        if org:
+            org_ties.append((target, org, row.staff, row.network, row.relation))
 
     for node_id, node in nodes.items():
         node["companies"] = sorted(node["companies"], key=str.casefold)
@@ -396,6 +410,12 @@ def build_graph(staff, rows, crm, coverage, config=None):
                 nodes[node_id].update(crm="Check CRM", confidence="Ambiguous · multiple observed identities")
 
     crm_metrics, crm_staff = attach_crm(crm, nodes, match_nodes, staff, internal_names, edge)
+    for person, org, staff_id, network, relation in org_ties:
+        if unresolved.reason(nodes[person]):
+            continue
+        affiliation_evidence.add((staff_id, org, network))
+        if relation:
+            credit(org, staff_id, relation)
 
     denominator = max(1, len(nodes) - 1)
     for node_id, node in nodes.items():
@@ -473,9 +493,9 @@ def write_outputs(graph, output, data_only=False):
         payload = json.dumps(graph, ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c")
         (output / f"{TITLE}.html").write_text(template.replace("/*__GRAPH__*/", payload), encoding="utf-8")
     write_catalog(graph, output)
-    external = [node for node in graph["nodes"] if node["kind"] in ("person", "organization")]
-    working = [node for node in external if node["working"] and node["sector"] in MEDIA_SECTORS
-               and not node.get("unresolved")]
+    external = [node for node in graph["nodes"] if node["kind"] in ("person", "organization")
+                and not node.get("unresolved")]
+    working = [node for node in external if node["working"] and node["sector"] in MEDIA_SECTORS]
     staff = {node["id"]: node["name"] for node in graph["nodes"] if node["kind"] == "staff"}
     with (output / f"{TITLE}.csv").open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle)
@@ -502,7 +522,7 @@ def write_outputs(graph, output, data_only=False):
             evidence.append(f"{node['programs']} linked programs")
         if node["mutual"]:
             evidence.append(f"{node['mutual']} mutual staff ties")
-        summary.append(f"{rank}. {node['name']} ({node['sector']}) — " + ". ".join(evidence) + ".")
+        summary.append(f"{rank}. {node['name']} ({node['sector']}): " + ". ".join(evidence) + ".")
     if not working:
         summary.append("No working relationships met the journalism and media criteria.")
     counts = Counter(node["crm"] for node in working)
